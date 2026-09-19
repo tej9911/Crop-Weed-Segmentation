@@ -14,6 +14,10 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+MAX_UPLOAD_BYTES = int(os.environ.get('MAX_UPLOAD_BYTES', 10 * 1024 * 1024))
+ENVIRONMENT = os.environ.get('APP_ENV', 'development').lower()
+ALLOW_DEMO_MODE = os.environ.get('ALLOW_DEMO_MODE', 'true').lower() == 'true'
+
 # --- Custom Layers & TensorFlow Fallback ---
 HAS_TF = False
 try:
@@ -43,7 +47,8 @@ else:
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
-CORS(app)
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_BYTES
+CORS(app, origins=os.environ.get('CORS_ORIGINS', '*').split(','))
 
 IMG_SIZE = (128, 128)
 NUM_CLASSES = 4
@@ -61,29 +66,63 @@ CLASS_INFO = {
 }
 
 _model = None
+_model_error = None
+
+
+def model_path():
+    configured_path = os.environ.get('MODEL_PATH')
+    if configured_path:
+        return configured_path if os.path.isabs(configured_path) else os.path.join(BASE_DIR, configured_path)
+    for filename in ('mt_ahnet_model.keras', 'mt_ahnet_model.h5'):
+        candidate = os.path.join(BASE_DIR, filename)
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
 def get_model():
+    global _model_error
     if not HAS_TF:
+        _model_error = 'TensorFlow/Keras is unavailable.'
         return None
     global _model
     if _model is not None:
         return _model
     try:
-        model_path = 'mt_ahnet_model.keras'
-        if not os.path.exists(model_path):
-            model_path = 'mt_ahnet_model.h5'
-        if os.path.exists(model_path):
+        path = model_path()
+        if path:
             _model = tf.keras.models.load_model(
-                model_path, 
+                path,
                 compile=False,
                 custom_objects={'ReduceMeanLayer': ReduceMeanLayer, 'ReduceMaxLayer': ReduceMaxLayer}
             )
-            print(f"INFO: Model loaded from {model_path}")
+            _model_error = None
+            logger.info('Model loaded from %s', path)
         else:
-            print(f"WARNING: {model_path} not found.")
+            _model_error = 'No model artifact was found.'
+            logger.warning(_model_error)
     except Exception as exc:
-        print(f"ERROR: Model load failed: {exc}")
+        _model_error = f'Model load failed: {exc}'
+        logger.exception(_model_error)
     return _model
+
+
+def prediction_response(predicted_class, confidence, probabilities, demo_mode, low_confidence=False):
+    values = {name: float(probabilities.get(name, 0.0)) for name in CLASS_NAMES}
+    values = {name: max(0.0, value) for name, value in values.items()}
+    total = sum(values.values())
+    if not np.isfinite(total) or total <= 0:
+        raise ValueError('Model returned invalid probabilities.')
+    values = {name: value / total for name, value in values.items()}
+    response = {
+        'predicted_class': predicted_class,
+        'confidence': float(confidence),
+        'probabilities': values,
+        'class_info': CLASS_INFO.get(predicted_class, {}),
+        'demo_mode': demo_mode,
+    }
+    if low_confidence:
+        response['low_confidence'] = True
+    return response
 
 @app.route('/')
 @app.route('/index.html')
@@ -100,10 +139,13 @@ def stats():
 @app.route('/api/health')
 def health():
     m = get_model()
+    ready = m is not None or (ENVIRONMENT != 'production' and ALLOW_DEMO_MODE)
     return jsonify({
-        'status': 'ok',
+        'status': 'ready' if ready else 'degraded',
+        'environment': ENVIRONMENT,
         'model_loaded': m is not None,
-        'demo_mode': m is None,
+        'demo_mode': m is None and ALLOW_DEMO_MODE,
+        'model_error': _model_error if m is None else None,
         'classes': CLASS_NAMES,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
     })
@@ -114,6 +156,8 @@ def predict():
         return jsonify({'error': 'No image file provided.'}), 400
     f = request.files['image']
     data = f.read()
+    if not data:
+        return jsonify({'error': 'The image file is empty.'}), 400
     
     # Pre-check likeness
     score = 0.0
@@ -130,8 +174,8 @@ def predict():
         yellow = ((h >= 18) & (h <= 45) & (s > 30) & (v > 50) & valid)
         brown = ((h >= 8) & (h <= 28) & (s > 20) & (v > 20) & valid)
         score = float((green.sum() + yellow.sum() + brown.sum()) / valid_count)
-    except:
-        pass
+    except (OSError, ValueError, Image.UnidentifiedImageError):
+        return jsonify({'error': 'The uploaded file is not a valid image.'}), 415
 
     print(f"DEBUG: Likeness Score = {score:.4f}")
     
@@ -140,6 +184,8 @@ def predict():
 
     model = get_model()
     if model is None:
+        if ENVIRONMENT == 'production' or not ALLOW_DEMO_MODE:
+            return jsonify({'error': 'The inference model is unavailable.'}), 503
         # Fallback to local python pixel-based heuristic classifier
         try:
             img = Image.open(io.BytesIO(data)).convert('RGB')
@@ -209,13 +255,7 @@ def predict():
                         p_val = p_soil
                     probabilities[c] = rem * (p_val / other_sum)
 
-            return jsonify({
-                'predicted_class': pred_class,
-                'confidence': confidence,
-                'probabilities': probabilities,
-                'class_info': CLASS_INFO.get(pred_class, {}),
-                'demo_mode': True
-            })
+            return jsonify(prediction_response(pred_class, confidence, probabilities, True))
         except Exception as e:
             return jsonify({'error': f'Fallback inference failed: {str(e)}'}), 500
         
@@ -224,29 +264,26 @@ def predict():
     x = np.expand_dims(np.array(img_rgb, dtype=np.float32) / 255.0, axis=0)
     
     # Predict
-    preds = model.predict(x, verbose=0)[0]
+    preds = np.asarray(model.predict(x, verbose=0)[0], dtype=np.float32)
+    if preds.shape != (NUM_CLASSES,) or not np.all(np.isfinite(preds)):
+        return jsonify({'error': 'The model returned an invalid prediction.'}), 502
     idx = int(np.argmax(preds))
     confidence = float(preds[idx])
 
     # If model confidence is too low, fall back to heuristic label
     if confidence < LIVE_MIN_CONFIDENCE:
         logger.warning(f"Low confidence ({confidence:.2f}), returning best-guess with demo_mode flag.")
-        return jsonify({
-            'predicted_class': CLASS_NAMES[idx],
-            'confidence': confidence,
-            'probabilities': {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)},
-            'class_info': CLASS_INFO.get(CLASS_NAMES[idx], {}),
-            'demo_mode': True,
-            'low_confidence': True
-        })
+        return jsonify(prediction_response(
+            CLASS_NAMES[idx], confidence,
+            {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)},
+            False, low_confidence=True
+        ))
     
-    return jsonify({
-        'predicted_class': CLASS_NAMES[idx],
-        'confidence': confidence,
-        'probabilities': {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)},
-        'class_info': CLASS_INFO.get(CLASS_NAMES[idx], {}),
-        'demo_mode': False
-    })
+    return jsonify(prediction_response(
+        CLASS_NAMES[idx], confidence,
+        {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)},
+        False
+    ))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
