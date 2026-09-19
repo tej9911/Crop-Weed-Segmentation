@@ -12,7 +12,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py index.html ./
-COPY mt_ahnet_model.keras ./
+# Supply the validated model through the image build, a mounted volume, or MODEL_PATH.
 
 EXPOSE 5000
 

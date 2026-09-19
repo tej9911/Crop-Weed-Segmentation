@@ -14,7 +14,21 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MAX_UPLOAD_BYTES = int(os.environ.get('MAX_UPLOAD_BYTES', 10 * 1024 * 1024))
+
+def env_int(name, default, minimum=1):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise RuntimeError(f'{name} must be an integer.') from exc
+    if parsed < minimum:
+        raise RuntimeError(f'{name} must be at least {minimum}.')
+    return parsed
+
+
+MAX_UPLOAD_BYTES = env_int('MAX_UPLOAD_BYTES', 10 * 1024 * 1024)
 ENVIRONMENT = os.environ.get('APP_ENV', 'development').lower()
 ALLOW_DEMO_MODE = os.environ.get('ALLOW_DEMO_MODE', 'true').lower() == 'true'
 
@@ -49,6 +63,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_BYTES
 CORS(app, origins=os.environ.get('CORS_ORIGINS', '*').split(','))
+
+
+@app.errorhandler(413)
+def request_too_large(_error):
+    return jsonify({'error': 'The uploaded request is too large.'}), 413
+
+
+@app.errorhandler(500)
+def internal_error(_error):
+    logger.exception('Unhandled application error')
+    return jsonify({'error': 'Internal server error.'}), 500
 
 IMG_SIZE = (128, 128)
 NUM_CLASSES = 4
@@ -95,6 +120,11 @@ def get_model():
                 compile=False,
                 custom_objects={'ReduceMeanLayer': ReduceMeanLayer, 'ReduceMaxLayer': ReduceMaxLayer}
             )
+            if _model.input_shape[1:] != (*IMG_SIZE, 3):
+                raise ValueError(f'Expected model input shape (*, {IMG_SIZE[0]}, {IMG_SIZE[1]}, 3), got {_model.input_shape}.')
+            output_shape = _model.output_shape
+            if output_shape[-1] != NUM_CLASSES:
+                raise ValueError(f'Expected {NUM_CLASSES} model outputs, got {output_shape}.')
             _model_error = None
             logger.info('Model loaded from %s', path)
         else:
@@ -107,15 +137,18 @@ def get_model():
 
 
 def prediction_response(predicted_class, confidence, probabilities, demo_mode, low_confidence=False):
+    if predicted_class not in CLASS_NAMES:
+        raise ValueError('Model returned an unknown class.')
     values = {name: float(probabilities.get(name, 0.0)) for name in CLASS_NAMES}
     values = {name: max(0.0, value) for name, value in values.items()}
     total = sum(values.values())
     if not np.isfinite(total) or total <= 0:
         raise ValueError('Model returned invalid probabilities.')
     values = {name: value / total for name, value in values.items()}
+    normalized_confidence = values[predicted_class]
     response = {
         'predicted_class': predicted_class,
-        'confidence': float(confidence),
+        'confidence': normalized_confidence,
         'probabilities': values,
         'class_info': CLASS_INFO.get(predicted_class, {}),
         'demo_mode': demo_mode,
@@ -150,6 +183,14 @@ def health():
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
     })
 
+
+@app.route('/api/ready')
+def ready():
+    m = get_model()
+    if m is None:
+        return jsonify({'status': 'not_ready', 'reason': _model_error or 'Model unavailable.'}), 503
+    return jsonify({'status': 'ready', 'model_loaded': True})
+
 @app.route('/api/predict', methods=['POST'])
 def predict():
     if 'image' not in request.files:
@@ -177,7 +218,7 @@ def predict():
     except (OSError, ValueError, Image.UnidentifiedImageError):
         return jsonify({'error': 'The uploaded file is not a valid image.'}), 415
 
-    print(f"DEBUG: Likeness Score = {score:.4f}")
+    logger.debug('Likeness score: %.4f', score)
     
     if score < DEMO_MIN_FIELD_LIKENESS:
         return jsonify({'error': f'Rejected (Score: {score:.2f}). Try a clearer field image.'}), 422
@@ -214,13 +255,21 @@ def predict():
                 pred_class = 'Soil'
                 confidence = min(0.99, max(0.5, 0.8 + (p_soil * 0.15)))
                 rem = 1.0 - confidence
-                other_sum = p_soy + p_grass + p_broad or 1.0
-                probabilities = {
-                    'Soil': confidence,
-                    'Soybean': rem * (p_soy / other_sum),
-                    'Grass Weed': rem * (p_grass / other_sum),
-                    'Broadleaf Weed': rem * (p_broad / other_sum)
-                }
+                other_sum = p_soy + p_grass + p_broad
+                if other_sum:
+                    probabilities = {
+                        'Soil': confidence,
+                        'Soybean': rem * (p_soy / other_sum),
+                        'Grass Weed': rem * (p_grass / other_sum),
+                        'Broadleaf Weed': rem * (p_broad / other_sum)
+                    }
+                else:
+                    probabilities = {
+                        'Soil': confidence,
+                        'Soybean': rem / 3,
+                        'Grass Weed': rem / 3,
+                        'Broadleaf Weed': rem / 3
+                    }
             else:
                 if p_soy >= p_grass and p_soy >= p_broad:
                     pred_class = 'Soybean'
@@ -237,7 +286,7 @@ def predict():
                 
                 # Exclude the predicted class pixels from the denominator for other classes
                 pred_pix = soy_pix if pred_class == 'Soybean' else (grass_pix if pred_class == 'Grass Weed' else broad_pix)
-                other_sum = (total_pix - pred_pix) or 1.0
+                other_sum = total_pix - pred_pix
                 
                 probabilities = {}
                 probabilities[pred_class] = confidence
@@ -245,45 +294,42 @@ def predict():
                 for c in ['Soybean', 'Grass Weed', 'Broadleaf Weed', 'Soil']:
                     if c == pred_class:
                         continue
-                    if c == 'Soybean':
-                        p_val = p_soy
-                    elif c == 'Grass Weed':
-                        p_val = p_grass
-                    elif c == 'Broadleaf Weed':
-                        p_val = p_broad
+                    if other_sum:
+                        if c == 'Soybean':
+                            p_val = p_soy
+                        elif c == 'Grass Weed':
+                            p_val = p_grass
+                        elif c == 'Broadleaf Weed':
+                            p_val = p_broad
+                        else:
+                            p_val = p_soil
+                        probabilities[c] = rem * (p_val / other_sum)
                     else:
-                        p_val = p_soil
-                    probabilities[c] = rem * (p_val / other_sum)
+                        probabilities[c] = rem / (len(CLASS_NAMES) - 1)
 
             return jsonify(prediction_response(pred_class, confidence, probabilities, True))
         except Exception as e:
             return jsonify({'error': f'Fallback inference failed: {str(e)}'}), 500
         
-    # Preprocess for deep learning
-    img_rgb = Image.open(io.BytesIO(data)).convert('RGB').resize(IMG_SIZE)
-    x = np.expand_dims(np.array(img_rgb, dtype=np.float32) / 255.0, axis=0)
-    
-    # Predict
-    preds = np.asarray(model.predict(x, verbose=0)[0], dtype=np.float32)
-    if preds.shape != (NUM_CLASSES,) or not np.all(np.isfinite(preds)):
-        return jsonify({'error': 'The model returned an invalid prediction.'}), 502
-    idx = int(np.argmax(preds))
-    confidence = float(preds[idx])
-
-    # If model confidence is too low, fall back to heuristic label
-    if confidence < LIVE_MIN_CONFIDENCE:
-        logger.warning(f"Low confidence ({confidence:.2f}), returning best-guess with demo_mode flag.")
-        return jsonify(prediction_response(
-            CLASS_NAMES[idx], confidence,
-            {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)},
-            False, low_confidence=True
-        ))
-    
-    return jsonify(prediction_response(
-        CLASS_NAMES[idx], confidence,
-        {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)},
-        False
-    ))
+    try:
+        img_rgb = Image.open(io.BytesIO(data)).convert('RGB').resize(IMG_SIZE)
+        x = np.expand_dims(np.array(img_rgb, dtype=np.float32) / 255.0, axis=0)
+        preds = np.asarray(model.predict(x, verbose=0)[0], dtype=np.float32)
+        if preds.shape != (NUM_CLASSES,) or not np.all(np.isfinite(preds)):
+            return jsonify({'error': 'The model returned an invalid prediction.'}), 502
+        idx = int(np.argmax(preds))
+        probabilities = {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)}
+        response = prediction_response(CLASS_NAMES[idx], float(preds[idx]), probabilities, False)
+        if response['confidence'] < LIVE_MIN_CONFIDENCE:
+            logger.warning('Low confidence (%.2f) for %s.', response['confidence'], CLASS_NAMES[idx])
+            response['low_confidence'] = True
+        return jsonify(response)
+    except (OSError, ValueError) as exc:
+        logger.warning('Prediction input/model contract failure: %s', exc)
+        return jsonify({'error': 'The image could not be processed.'}), 422
+    except Exception:
+        logger.exception('Inference failed')
+        return jsonify({'error': 'Inference failed.'}), 502
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

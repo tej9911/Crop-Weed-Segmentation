@@ -1342,6 +1342,7 @@
     // Base Configurations
     const API_BASE = window.location.origin;
     let isBackendOnline = false;
+    let allowClientSimulation = false;
     let currentImage = null;
     let originalImageWidth = 0;
     let originalImageHeight = 0;
@@ -1474,21 +1475,23 @@
         if (!res.ok) throw new Error('API server error');
         const data = await res.json();
         
-        isBackendOnline = data.status === 'ok';
-        statusDot.className = 'status-dot active';
-        statusText.textContent = 'Server Connected';
-        fallbackBanner.style.display = 'none';
-        modeBadge.style.display = 'none';
+        isBackendOnline = true;
+        allowClientSimulation = data.demo_mode === true;
+        statusDot.className = data.model_loaded ? 'status-dot active' : 'status-dot warn';
+        statusText.textContent = data.model_loaded ? 'Model Ready' : 'Simulation Mode';
+        fallbackBanner.style.display = allowClientSimulation ? 'flex' : 'none';
+        modeBadge.style.display = allowClientSimulation ? 'inline-flex' : 'none';
         
         // Fetch stats
         fetchStats();
       } catch (err) {
         console.warn('Backend server connection failed, entering Simulation Mode.', err);
         isBackendOnline = false;
+        allowClientSimulation = false;
         statusDot.className = 'status-dot warn';
         statusText.textContent = 'Server Offline';
-        fallbackBanner.style.display = 'flex';
-        modeBadge.style.display = 'inline-flex';
+        fallbackBanner.style.display = 'none';
+        modeBadge.style.display = 'none';
         
         // Initialize default stats/chart
         initDatasetChart();
@@ -1871,13 +1874,19 @@
 
           } catch (err) {
             console.error('Deep Learning server error, falling back to heuristics.', err);
-            showToast('Deep learning server failed. Fallback to client heuristics.', 'warn');
-            runClientSimulation(pixPercentages);
+            if (allowClientSimulation) {
+              showToast('Deep learning server failed. Fallback to client heuristics.', 'warn');
+              runClientSimulation(pixPercentages);
+            } else {
+              showToast('Prediction service is unavailable.', 'warn');
+            }
           }
-        } else {
+        } else if (allowClientSimulation) {
           // Local simulation only
           await new Promise(resolve => setTimeout(resolve, 800));
           runClientSimulation(pixPercentages);
+        } else {
+          showToast('Connect to the prediction service before running analysis.', 'warn');
         }
       } finally {
         predictBtn.disabled = false;

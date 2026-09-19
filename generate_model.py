@@ -1,13 +1,16 @@
-"""
-Regenerate the MT-AHNet model using the native .keras format.
-Architecture: Multi-scale parallel branches + CBAM Attention.
-"""
+"""Train and export the MT-AHNet four-class image classifier."""
+
+import argparse
+import json
 import os
+from pathlib import Path
+
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-import numpy as np
 import tensorflow as tf
 import keras
+import numpy as np
+from PIL import Image
 from keras import layers, Model, Input
 import keras.ops as kops
 
@@ -58,7 +61,103 @@ def build_model():
     out = layers.Dense(4, activation='softmax')(x)
     return Model(inp, out)
 
-print("Regenerating model...")
-model = build_model()
-model.save('mt_ahnet_model.keras')
-print("✅ Saved as mt_ahnet_model.keras")
+
+DATASET_CLASS_DIRS = ['broadleaf', 'grass', 'soil', 'soybean']
+MODEL_CLASS_NAMES = ['Broadleaf Weed', 'Grass Weed', 'Soil', 'Soybean']
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--data-dir', default='dataset')
+    parser.add_argument('--output', default='mt_ahnet_model.keras')
+    parser.add_argument('--metadata', default='mt_ahnet_model.metadata.json')
+    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--batch-size', type=int, default=32)
+    parser.add_argument('--validation-split', type=float, default=0.2)
+    parser.add_argument('--seed', type=int, default=42)
+    return parser.parse_args()
+
+
+def train_and_export(args):
+    if not 0 < args.validation_split < 1:
+        raise ValueError('--validation-split must be between 0 and 1.')
+    if args.epochs < 1 or args.batch_size < 1:
+        raise ValueError('--epochs and --batch-size must be positive.')
+
+    data_dir = Path(args.data_dir)
+    missing_dirs = [name for name in DATASET_CLASS_DIRS if not (data_dir / name).is_dir()]
+    if missing_dirs:
+        raise FileNotFoundError(f'Missing dataset class directories: {missing_dirs}')
+
+    tf.keras.utils.set_random_seed(args.seed)
+    paths = []
+    labels = []
+    supported_extensions = {'.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tif', '.tiff'}
+    for label, class_dir in enumerate(DATASET_CLASS_DIRS):
+        class_paths = sorted(
+            path for path in (data_dir / class_dir).iterdir()
+            if path.is_file() and path.suffix.lower() in supported_extensions
+        )
+        paths.extend(str(path) for path in class_paths)
+        labels.extend([label] * len(class_paths))
+    if not paths:
+        raise ValueError(f'No supported images found in {data_dir}.')
+
+    indices = np.arange(len(paths))
+    np.random.default_rng(args.seed).shuffle(indices)
+    split_index = int(len(indices) * (1 - args.validation_split))
+    train_indices, validation_indices = indices[:split_index], indices[split_index:]
+
+    def load_image(path, label):
+        image = Image.open(path.numpy().decode('utf-8')).convert('RGB').resize((128, 128))
+        return np.asarray(image, dtype=np.float32) / 255.0, label
+
+    def make_dataset(selected_indices, shuffle):
+        selected_paths = np.asarray(paths)[selected_indices]
+        selected_labels = np.asarray(labels, dtype=np.int32)[selected_indices]
+        dataset = tf.data.Dataset.from_tensor_slices((selected_paths, selected_labels))
+
+        def load_with_tensor(path, label):
+            image, loaded_label = tf.py_function(load_image, (path, label), (tf.float32, tf.int32))
+            image.set_shape((128, 128, 3))
+            loaded_label.set_shape(())
+            return image, loaded_label
+
+        dataset = dataset.map(load_with_tensor, num_parallel_calls=tf.data.AUTOTUNE)
+        if shuffle:
+            dataset = dataset.shuffle(len(selected_indices), seed=args.seed, reshuffle_each_iteration=False)
+        return dataset.batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
+
+    train_ds = make_dataset(train_indices, shuffle=True)
+    validation_ds = make_dataset(validation_indices, shuffle=False)
+
+    model = build_model()
+    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    history = model.fit(train_ds, validation_data=validation_ds, epochs=args.epochs)
+    evaluation = model.evaluate(validation_ds, return_dict=True, verbose=0)
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    model.save(output_path)
+    metadata = {
+        'model_version': 'mt-ahnet-v1',
+        'class_names': MODEL_CLASS_NAMES,
+        'dataset_directories': DATASET_CLASS_DIRS,
+        'input_size': [128, 128, 3],
+        'preprocessing': 'RGB float32 values divided by 255',
+        'seed': args.seed,
+        'epochs': args.epochs,
+        'batch_size': args.batch_size,
+        'validation_split': args.validation_split,
+        'metrics': {key: float(value) for key, value in evaluation.items()},
+        'final_training_metrics': {key: float(values[-1]) for key, values in history.history.items()},
+    }
+    metadata_path = Path(args.metadata)
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(json.dumps(metadata, indent=2) + '\n', encoding='utf-8')
+    print(f'Saved model to {output_path}')
+    print(f'Saved metadata to {metadata_path}')
+
+
+if __name__ == '__main__':
+    train_and_export(parse_args())
