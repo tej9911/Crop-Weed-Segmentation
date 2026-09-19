@@ -64,13 +64,14 @@ def build_model():
 
 DATASET_CLASS_DIRS = ['broadleaf', 'grass', 'soil', 'soybean']
 MODEL_CLASS_NAMES = ['Broadleaf Weed', 'Grass Weed', 'Soil', 'Soybean']
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--data-dir', default='dataset')
-    parser.add_argument('--output', default='mt_ahnet_model.keras')
-    parser.add_argument('--metadata', default='mt_ahnet_model.metadata.json')
+    parser.add_argument('--data-dir', default=str(PROJECT_ROOT / 'data' / 'dataset'))
+    parser.add_argument('--output', default=str(PROJECT_ROOT / 'models' / 'mt_ahnet_model.keras'))
+    parser.add_argument('--metadata', default=str(PROJECT_ROOT / 'models' / 'mt_ahnet_model.metadata.json'))
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--validation-split', type=float, default=0.2)

@@ -6,4 +6,6 @@ __pycache__
 .env
 .venv
 venv
-dataset
+data/dataset
+__pycache__
+.pytest_cache

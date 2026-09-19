@@ -11,9 +11,10 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py index.html ./
-# Supply the validated model through the image build, a mounted volume, or MODEL_PATH.
+COPY backend ./backend
+COPY frontend ./frontend
+# Supply the validated model through a mounted volume or MODEL_PATH.
 
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "120", "backend.app:app"]

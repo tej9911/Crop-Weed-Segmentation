@@ -1,4 +1,4 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 start "" http://localhost:5000
-python app.py
+python -m backend.app

@@ -1,6 +1,6 @@
 #!/bin/bash
-cd "$(dirname "$0")"
-python app.py &
+cd "$(dirname "$0")/.."
+python -m backend.app &
 sleep 2
 if command -v xdg-open &>/dev/null; then
     xdg-open http://localhost:5000

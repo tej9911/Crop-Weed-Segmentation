@@ -21,14 +21,22 @@ This project presents a deep learning-based solution for **crop and weed segment
 ```
 Crop-Weed-Segmentation-Using-MT-AHNet/
 │
-├── app.py                     # Main application (Flask-based)
-├── generate_model.py          # Model creation/training script
-├── mt_ahnet_model.keras       # Validated model artifact, supplied separately
-├── index.html                 # Frontend interface
+├── backend/                   # Flask API and model training code
+│   ├── app.py
+│   ├── generate_model.py
+│   └── __init__.py
+├── frontend/                  # Browser application
+│   └── index.html
+├── data/                      # Local training data
+│   └── dataset/<class>/*.tif
+├── models/                    # Validated model artifacts, supplied separately
 ├── requirements.txt           # Production dependencies
+├── requirements-dev.txt       # Test and development dependencies
 ├── Dockerfile                 # Production container image
-├── start_app.bat              # Script to run the app
-├── base_paper.pdf             # Reference research paper
+├── scripts/                   # Local launch scripts
+│   ├── start_app.bat
+│   └── start_app.sh
+├── tests/                     # Automated regression tests
 ├── README.md                  # Project documentation
 ```
 
@@ -84,7 +92,7 @@ To train and export an artifact from the included dataset:
 
 ```
 pip install -r requirements-dev.txt
-python generate_model.py --epochs 10 --output mt_ahnet_model.keras
+python backend/generate_model.py --epochs 10
 ```
 
 The command also writes `mt_ahnet_model.metadata.json` with the class order,
@@ -94,20 +102,20 @@ promoting the artifact to production.
 ### 3. Run the application
 
 ```
-python app.py
+python -m backend.app
 ```
 
 OR (Windows):
 
 ```
-start_app.bat
+scripts\start_app.bat
 ```
 
 For a production-style process, use the container or a WSGI server:
 
 ```
 docker build -t crop-weed-segmentation .
-docker run --rm -p 5000:5000 -v ./mt_ahnet_model.keras:/app/mt_ahnet_model.keras:ro crop-weed-segmentation
+docker run --rm -p 5000:5000 -v ./models/mt_ahnet_model.keras:/app/models/mt_ahnet_model.keras:ro crop-weed-segmentation
 ```
 
 Check service and model state with `/api/health` and `/api/ready`. The health
@@ -117,7 +125,7 @@ loaded in production.
 Run regression tests with:
 
 ```
-pytest
+python -m pytest
 ```
 
 ---

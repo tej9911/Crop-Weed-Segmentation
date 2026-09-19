@@ -59,7 +59,9 @@ else:
     class ReduceMeanLayer: pass
     class ReduceMaxLayer: pass
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(PROJECT_ROOT, 'frontend')
+MODEL_DIR = os.path.join(PROJECT_ROOT, 'models')
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_BYTES
 CORS(app, origins=os.environ.get('CORS_ORIGINS', '*').split(','))
@@ -97,9 +99,9 @@ _model_error = None
 def model_path():
     configured_path = os.environ.get('MODEL_PATH')
     if configured_path:
-        return configured_path if os.path.isabs(configured_path) else os.path.join(BASE_DIR, configured_path)
+        return configured_path if os.path.isabs(configured_path) else os.path.join(PROJECT_ROOT, configured_path)
     for filename in ('mt_ahnet_model.keras', 'mt_ahnet_model.h5'):
-        candidate = os.path.join(BASE_DIR, filename)
+        candidate = os.path.join(MODEL_DIR, filename)
         if os.path.exists(candidate):
             return candidate
     return None
@@ -160,7 +162,7 @@ def prediction_response(predicted_class, confidence, probabilities, demo_mode, l
 @app.route('/')
 @app.route('/index.html')
 def home():
-    return send_from_directory(BASE_DIR, 'index.html')
+    return send_from_directory(FRONTEND_DIR, 'index.html')
 
 @app.route('/api/stats')
 def stats():

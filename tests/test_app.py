@@ -2,7 +2,7 @@ import io
 
 from PIL import Image
 
-import app
+from backend import app
 
 
 def image_upload(color=(90, 150, 40)):
