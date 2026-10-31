@@ -3,1957 +3,939 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MT-AHNet Crop-Weed AI Intelligence Platform</title>
-  <!-- Typography -->
+  <meta name="description" content="MT-AHNet: attention-based crop and weed classification for soybean fields." />
+  <title>MT-AHNet Crop-Weed Classifier</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌱</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,600..800,60..100&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-  
-  <!-- CSS Styling -->
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600..800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+
   <style>
     :root {
-      /* Colors */
-      --bg-dark: #070a08;
-      --bg-card: rgba(13, 20, 15, 0.65);
-      --bg-card-hover: rgba(18, 28, 21, 0.75);
-      --border-glow: rgba(76, 175, 80, 0.18);
-      --border-glow-hover: rgba(76, 175, 80, 0.3);
-      --text-main: #f3f7f4;
-      --text-muted: #8fa093;
-      --accent-soybean: #2ec158;
-      --accent-grass: #f39c12;
-      --accent-broadleaf: #e74c3c;
-      --accent-soil: #a17043;
-      --accent-glow: rgba(46, 193, 88, 0.15);
-      
-      /* UI states */
-      --status-ok: #2ec158;
-      --status-warn: #f39c12;
-      --status-bad: #e74c3c;
-      
-      /* Font stacks */
-      --font-heading: 'Fraunces', serif;
-      --font-body: 'Plus Jakarta Sans', sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-      
-      /* Radii */
-      --radius-lg: 24px;
-      --radius-md: 16px;
+      --bg: #070a08;
+      --card: rgba(13, 20, 15, 0.72);
+      --card-solid: #0d140f;
+      --border: rgba(76, 175, 80, 0.18);
+      --border-strong: rgba(76, 175, 80, 0.32);
+      --text: #f3f7f4;
+      --muted: #94a597;
+      --soybean: #2ec158;
+      --grass: #f39c12;
+      --broadleaf: #e74c3c;
+      --soil: #a17043;
+      --ok: #2ec158;
+      --warn: #f39c12;
+      --bad: #e74c3c;
+      --font-heading: 'Fraunces', Georgia, serif;
+      --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+      --radius-lg: 22px;
+      --radius-md: 14px;
       --radius-sm: 10px;
-      
-      /* Transition */
-      --transition-smooth: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      --ease: cubic-bezier(0.25, 0.8, 0.25, 1);
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background-color: var(--bg-dark);
-      color: var(--text-main);
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(circle at 10% 15%, rgba(46, 193, 88, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(243, 156, 18, 0.05) 0%, transparent 45%);
+      color: var(--text);
       font-family: var(--font-body);
-      min-height: 100vh;
-      overflow-x: hidden;
       line-height: 1.6;
-      background-image: 
-        radial-gradient(circle at 10% 20%, rgba(46, 193, 88, 0.08) 0%, transparent 40%),
-        radial-gradient(circle at 80% 80%, rgba(243, 156, 18, 0.05) 0%, transparent 45%),
-        radial-gradient(circle at 50% 50%, rgba(231, 76, 60, 0.04) 0%, transparent 35%);
-      position: relative;
+      min-height: 100vh;
     }
 
-    /* Grid Overlay background */
     body::before {
       content: "";
       position: fixed;
       inset: 0;
-      background-image: linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
       background-size: 30px 30px;
       pointer-events: none;
-      z-index: 1;
     }
 
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 24px;
-      position: relative;
-      z-index: 2;
+    a { color: var(--soybean); }
+    code { font-family: var(--font-mono); font-size: 0.92em; }
+    h1, h2, h3 { font-family: var(--font-heading); line-height: 1.2; }
+
+    .container { max-width: 1360px; margin: 0 auto; padding: 24px; position: relative; }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;
     }
 
-    /* Header & Topbar */
+    /* Header */
     header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 16px 28px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-glow);
-      border-radius: 999px;
+      display: flex; justify-content: space-between; align-items: center; gap: 16px;
+      padding: 14px 24px; margin-bottom: 24px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 999px;
       backdrop-filter: blur(16px);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-      margin-bottom: 24px;
-      transition: var(--transition-smooth);
     }
-
-    header:hover {
-      border-color: var(--border-glow-hover);
-      box-shadow: 0 12px 35px rgba(46, 193, 88, 0.1);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
+    .brand { display: flex; align-items: center; gap: 14px; }
     .logo-mark {
-      width: 44px;
-      height: 44px;
-      background: linear-gradient(135deg, var(--accent-soybean) 0%, #1a8a3b 60%, var(--accent-soil) 100%);
-      border-radius: 12px;
-      box-shadow: 0 0 15px rgba(46, 193, 88, 0.35);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--font-heading);
-      font-weight: 800;
-      font-size: 20px;
-      color: #fff;
+      width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 22px;
+      background: linear-gradient(135deg, var(--soybean), #1a8a3b 60%, var(--soil));
       border: 1px solid rgba(255, 255, 255, 0.15);
-      animation: rotateLogo 8s ease-in-out infinite alternate;
     }
-
-    @keyframes rotateLogo {
-      0% { transform: scale(1) rotate(0deg); }
-      100% { transform: scale(1.05) rotate(15deg); }
-    }
-
-    .brand-text h1 {
-      font-family: var(--font-heading);
-      font-size: 24px;
-      letter-spacing: 0.5px;
-      background: linear-gradient(120deg, #ffffff, var(--accent-soybean));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .brand-text p {
-      font-size: 11px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      font-weight: 700;
-    }
-
-    .status-group {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .brand h1 { font-size: 22px; }
+    .brand p { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 
     .status-badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid var(--border-glow);
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-main);
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background-color: var(--text-muted);
-      box-shadow: 0 0 8px currentColor;
-    }
-
-    .status-dot.active {
-      background-color: var(--status-ok);
-      color: var(--status-ok);
-    }
-
-    .status-dot.warn {
-      background-color: var(--status-warn);
-      color: var(--status-warn);
-    }
-
-    .status-dot.bad {
-      background-color: var(--status-bad);
-      color: var(--status-bad);
-    }
-
-    /* Hero Unit */
-    .hero {
-      background: linear-gradient(135deg, rgba(13, 20, 15, 0.8) 0%, rgba(7, 10, 8, 0.9) 100%);
-      border: 1px solid var(--border-glow);
-      border-radius: var(--radius-lg);
-      padding: 32px 40px;
-      margin-bottom: 24px;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-    }
-
-    .hero::before {
-      content: "";
-      position: absolute;
-      top: -100px;
-      right: -100px;
-      width: 300px;
-      height: 300px;
-      background: radial-gradient(circle, rgba(46, 193, 88, 0.12) 0%, transparent 70%);
-      border-radius: 50%;
-      pointer-events: none;
-    }
-
-    .hero h2 {
-      font-family: var(--font-heading);
-      font-size: clamp(28px, 4vw, 42px);
-      margin-bottom: 12px;
-      line-height: 1.15;
-      font-weight: 700;
-    }
-
-    .hero p {
-      color: var(--text-muted);
-      max-width: 800px;
-      font-size: 15px;
-      margin-bottom: 20px;
-    }
-
-    .chip-container {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .chip {
-      background: rgba(46, 193, 88, 0.08);
-      border: 1px solid rgba(46, 193, 88, 0.2);
-      color: var(--accent-soybean);
-      padding: 6px 14px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .chip.yellow {
-      background: rgba(243, 156, 18, 0.08);
-      border: 1px solid rgba(243, 156, 18, 0.2);
-      color: var(--accent-grass);
-    }
-
-    /* main Grid Layout */
-    .dashboard-grid {
-      display: grid;
-      grid-template-columns: 1.1fr 1.3fr;
-      gap: 24px;
-      margin-bottom: 24px;
-    }
-
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-glow);
-      border-radius: var(--radius-lg);
-      padding: 30px;
-      backdrop-filter: blur(20px);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-      transition: var(--transition-smooth);
-      position: relative;
-    }
-
-    .card:hover {
-      border-color: var(--border-glow-hover);
-    }
-
-    .card-title {
-      font-family: var(--font-heading);
-      font-size: 22px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .card-title i {
-      color: var(--accent-soybean);
-      font-size: 20px;
-    }
-
-    .card-subtitle {
-      color: var(--text-muted);
-      font-size: 13px;
-      margin-bottom: 20px;
-    }
-
-    /* Workspace Upload Area */
-    .upload-zone {
-      border: 2px dashed rgba(46, 193, 88, 0.3);
-      border-radius: var(--radius-md);
-      padding: 40px 20px;
-      text-align: center;
-      background: rgba(0, 0, 0, 0.2);
-      cursor: pointer;
-      position: relative;
-      transition: var(--transition-smooth);
-      margin-bottom: 20px;
-      overflow: hidden;
-    }
-
-    .upload-zone:hover, .upload-zone.dragging {
-      border-color: var(--accent-soybean);
-      background: rgba(46, 193, 88, 0.03);
-      box-shadow: inset 0 0 20px rgba(46, 193, 88, 0.05);
-    }
-
-    .upload-zone input {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    .upload-icon {
-      font-size: 40px;
-      color: var(--accent-soybean);
-      margin-bottom: 12px;
-      display: inline-block;
-      animation: floatIcon 3s ease-in-out infinite;
-    }
-
-    @keyframes floatIcon {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
-    }
-
-    .upload-text {
-      font-weight: 700;
-      font-size: 16px;
-      margin-bottom: 6px;
-    }
-
-    .upload-hint {
-      color: var(--text-muted);
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
-    .scan-line {
-      position: absolute;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent-soybean), transparent);
-      box-shadow: 0 0 10px var(--accent-soybean);
-      top: 0;
-      animation: scanEffect 3s linear infinite;
-      display: none;
-    }
-
-    @keyframes scanEffect {
-      0% { top: 0; }
-      100% { top: 100%; }
-    }
-
-    .upload-meta {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      color: var(--text-muted);
-      padding: 6px 12px;
-      background: rgba(0, 0, 0, 0.3);
-      border-radius: 6px;
-      display: inline-block;
-      margin-top: 10px;
-    }
-
-    .action-btn-row {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .btn {
-      font-family: var(--font-body);
-      font-weight: 700;
-      font-size: 14px;
-      padding: 12px 24px;
-      border-radius: 12px;
-      cursor: pointer;
-      border: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      transition: var(--transition-smooth);
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent-soybean) 0%, #1e873b 100%);
-      color: #fff;
-      box-shadow: 0 6px 20px rgba(46, 193, 88, 0.25);
-    }
-
-    .btn-primary:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(46, 193, 88, 0.35);
-    }
-
-    .btn-primary:active:not(:disabled) {
-      transform: translateY(0);
-    }
-
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      box-shadow: none;
-    }
-
-    /* Swipe Split Viewport */
-    .split-viewport-card {
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .split-container {
-      width: 100%;
-      aspect-ratio: 4/3;
-      background: #020302;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--border-glow);
-      position: relative;
-      overflow: hidden;
-      margin-top: 8px;
-      box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8);
-      user-select: none;
-    }
-
-    .viewport-canvas {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-    }
-
-    #canvasSegmented {
-      z-index: 10;
-      clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%);
-    }
-
-    .slider-handle {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: 50%;
-      width: 4px;
-      background: #fff;
-      box-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px var(--accent-soybean);
-      z-index: 20;
-      cursor: ew-resize;
-      transform: translateX(-50%);
-    }
-
-    .slider-button {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 40px;
-      height: 40px;
-      background: #fff;
-      border-radius: 50%;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-      border: 2px solid var(--accent-soybean);
-      z-index: 30;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: ew-resize;
-      transition: transform 0.1s ease;
-      color: #070a08;
-    }
-
-    .slider-button:hover {
-      transform: translate(-50%, -50%) scale(1.1);
-    }
-
-    .viewport-label {
-      position: absolute;
-      top: 14px;
-      padding: 6px 12px;
-      background: rgba(0, 0, 0, 0.7);
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      z-index: 15;
-      border: 1px solid rgba(255,255,255,0.1);
-      pointer-events: none;
-    }
-
-    .label-orig {
-      left: 14px;
-      color: #fff;
-    }
-
-    .label-seg {
-      right: 14px;
-      color: var(--accent-soybean);
-      border-color: rgba(46, 193, 88, 0.3);
-    }
-
-    .legend-overlay {
-      position: absolute;
-      bottom: 14px;
-      left: 14px;
-      right: 14px;
-      z-index: 15;
-      background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(6px);
-      border-radius: 8px;
-      padding: 8px 12px;
-      border: 1px solid rgba(255,255,255,0.1);
-      display: flex;
-      justify-content: space-around;
-      flex-wrap: wrap;
-      gap: 10px;
-      pointer-events: none;
-      transform: translateY(50px);
-      opacity: 0;
-      transition: var(--transition-smooth);
-    }
-
-    .legend-overlay.visible {
-      transform: translateY(0);
-      opacity: 1;
-    }
-
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      font-weight: 600;
-    }
-
-    .legend-color {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
-      border: 1px solid rgba(255,255,255,0.2);
-    }
-
-    /* Output Section Details */
-    .result-section {
-      margin-top: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .predicted-badge-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .result-pill {
-      font-family: var(--font-heading);
-      font-size: 26px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .prob-bar-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .prob-bar-container {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: var(--radius-sm);
-      padding: 10px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      position: relative;
-    }
-
-    .prob-bar-meta {
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .prob-bar-bg {
-      height: 6px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 99px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .prob-bar-fill {
-      height: 100%;
-      width: 0;
-      border-radius: 99px;
-      transition: width 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
-    }
-
-    /* Agronomy Action Box */
-    .agronomy-box {
-      border-radius: var(--radius-md);
-      padding: 16px 20px;
-      background: rgba(46, 193, 88, 0.04);
-      border: 1px solid rgba(46, 193, 88, 0.15);
-      font-size: 13.5px;
-      display: flex;
-      gap: 14px;
-      align-items: flex-start;
-      margin-top: 4px;
-    }
-
-    .agronomy-box.alert-action {
-      background: rgba(231, 76, 60, 0.04);
-      border-color: rgba(231, 76, 60, 0.15);
-    }
-
-    .agronomy-box.warn-action {
-      background: rgba(243, 156, 18, 0.04);
-      border-color: rgba(243, 156, 18, 0.15);
-    }
-
-    .agronomy-icon {
-      font-size: 20px;
-      margin-top: 2px;
-    }
-
-    .agronomy-title {
-      font-weight: 700;
-      margin-bottom: 4px;
-      color: var(--text-main);
-    }
-
-    .agronomy-desc {
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-
-    /* Model Snapshot Metrics Dashboard */
-    .metrics-section {
-      margin-bottom: 24px;
-    }
-
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    .metric-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-glow);
-      border-radius: var(--radius-md);
-      padding: 20px;
-      text-align: center;
-      transition: var(--transition-smooth);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      height: 110px;
-    }
-
-    .metric-card:hover {
-      border-color: var(--border-glow-hover);
-      box-shadow: 0 5px 15px rgba(46, 193, 88, 0.05);
-    }
-
-    .metric-title {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-      font-weight: 700;
-    }
-
-    .metric-value {
-      font-family: var(--font-heading);
-      font-size: 28px;
-      font-weight: 800;
-      color: var(--text-main);
-    }
-
-    .snapshot-row {
-      display: grid;
-      grid-template-columns: 1.15fr 1fr;
-      gap: 24px;
-    }
-
-    /* Model Paper Tabs */
-    .tab-container {
-      display: flex;
-      border-bottom: 1px solid var(--border-glow);
-      margin-bottom: 18px;
-      gap: 8px;
-    }
-
-    .tab-btn {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      padding: 10px 16px;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: var(--font-body);
-      border-bottom: 2px solid transparent;
-      transition: var(--transition-smooth);
-    }
-
-    .tab-btn:hover {
-      color: var(--text-main);
-    }
-
-    .tab-btn.active {
-      color: var(--accent-soybean);
-      border-bottom-color: var(--accent-soybean);
-    }
-
-    .tab-panel {
-      display: none;
-      font-size: 13.5px;
-      color: var(--text-muted);
-      line-height: 1.6;
-    }
-
-    .tab-panel.active {
-      display: block;
-      animation: fadeIn 0.4s ease;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .paper-spec-list {
-      margin-top: 10px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .paper-spec-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.04);
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-    }
-
-    .paper-spec-item i {
-      color: var(--accent-soybean);
-    }
-
-    /* Interactive Model Flow Tree */
-    .arch-flow {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 14px;
-    }
-
-    .flow-node {
-      background: rgba(0,0,0,0.25);
-      border: 1px solid var(--border-glow);
-      border-radius: 8px;
-      padding: 10px 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      transition: var(--transition-smooth);
-      position: relative;
-    }
-
-    .flow-node:hover {
-      background: rgba(46, 193, 88, 0.03);
-      border-color: rgba(46, 193, 88, 0.35);
-      transform: translateX(4px);
-    }
-
-    .flow-node-title {
-      font-family: var(--font-mono);
-      font-size: 12.5px;
-      font-weight: 700;
-      color: var(--text-main);
-    }
-
-    .flow-node-desc {
-      font-size: 11px;
-      color: var(--text-muted);
-      text-align: right;
-    }
-
-    .flow-arrow {
-      align-self: center;
-      font-size: 10px;
-      color: var(--border-glow);
-      display: flex;
-      justify-content: center;
-    }
-
-    /* Dataset Distribution block */
-    .dataset-chart-wrapper {
-      background: rgba(0, 0, 0, 0.15);
-      border-radius: var(--radius-md);
-      padding: 18px;
-      border: 1px solid rgba(255, 255, 255, 0.03);
-      height: 250px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-    }
-
-    .chart-container {
-      position: relative;
-      width: 100%;
-      height: 100%;
-    }
-
-    /* Warning Fallback Banner */
-    .warning-banner {
-      background: linear-gradient(90deg, rgba(243, 156, 18, 0.15) 0%, rgba(243, 156, 18, 0.03) 100%);
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border); border-radius: 999px;
+      font-size: 13px; font-weight: 600; white-space: nowrap;
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .status-dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .status-dot.warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+    .status-dot.bad { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+
+    /* Banner */
+    .banner {
+      display: none; align-items: flex-start; gap: 12px;
+      padding: 12px 20px; margin-bottom: 20px; border-radius: var(--radius-md);
+      font-size: 13.5px; color: #ffd28a;
+      background: linear-gradient(90deg, rgba(243, 156, 18, 0.15), rgba(243, 156, 18, 0.03));
       border: 1px solid rgba(243, 156, 18, 0.3);
-      border-radius: var(--radius-md);
-      padding: 12px 20px;
-      color: var(--accent-grass);
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      font-size: 13.5px;
-      margin-bottom: 20px;
-      display: none; /* JS toggles */
+    }
+    .banner.visible { display: flex; }
+    .banner.error { color: #ffb4ab; background: linear-gradient(90deg, rgba(231, 76, 60, 0.15), rgba(231, 76, 60, 0.03)); border-color: rgba(231, 76, 60, 0.3); }
+    .banner svg { flex-shrink: 0; margin-top: 2px; }
+
+    /* Hero */
+    .hero {
+      padding: 32px 40px; margin-bottom: 24px; border-radius: var(--radius-lg);
+      background: linear-gradient(135deg, rgba(13, 20, 15, 0.85), rgba(7, 10, 8, 0.92));
+      border: 1px solid var(--border);
+    }
+    .hero h2 { font-size: clamp(26px, 4vw, 40px); margin-bottom: 12px; }
+    .hero p { color: var(--muted); max-width: 820px; font-size: 15px; margin-bottom: 18px; }
+    .chips { display: flex; gap: 10px; flex-wrap: wrap; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px;
+      font-size: 12px; font-weight: 600; color: var(--soybean);
+      background: rgba(46, 193, 88, 0.08); border: 1px solid rgba(46, 193, 88, 0.2);
+    }
+    .chip svg { width: 14px; height: 14px; }
+
+    /* Layout */
+    .grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 24px; margin-bottom: 24px; }
+    .column { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+    .card {
+      padding: 28px; border-radius: var(--radius-lg); min-width: 0;
+      background: var(--card); border: 1px solid var(--border); backdrop-filter: blur(20px);
+    }
+    .card-title { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .card-title h3 { font-size: 21px; }
+    .card-title svg { color: var(--soybean); width: 20px; height: 20px; }
+    .card-subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+    /* Upload */
+    .upload-zone {
+      position: relative; display: block; overflow: hidden; cursor: pointer; text-align: center;
+      padding: 36px 20px; margin-bottom: 18px; border-radius: var(--radius-md);
+      border: 2px dashed rgba(46, 193, 88, 0.3); background: rgba(0, 0, 0, 0.2);
+      transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
+    }
+    .upload-zone:hover, .upload-zone.dragging, .upload-zone:focus-within {
+      border-color: var(--soybean); background: rgba(46, 193, 88, 0.04);
+    }
+    .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .upload-icon { color: var(--soybean); margin-bottom: 10px; }
+    .upload-icon svg { width: 38px; height: 38px; }
+    .upload-text { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+    .upload-hint { color: var(--muted); font-size: 12px; }
+    .scan-line {
+      display: none; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--soybean), transparent);
+      animation: scan 2.4s linear infinite;
+    }
+    .busy .scan-line { display: block; }
+    @keyframes scan { from { top: 0; } to { top: 100%; } }
+
+    .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border: none; border-radius: 12px;
+      font-family: var(--font-body); font-weight: 700; font-size: 14px; cursor: pointer; color: #fff;
+      background: linear-gradient(135deg, var(--soybean), #1e873b);
+      box-shadow: 0 6px 20px rgba(46, 193, 88, 0.25);
+      transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), opacity 0.2s;
+    }
+    .btn svg { width: 16px; height: 16px; }
+    .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(46, 193, 88, 0.35); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+    .btn:focus-visible, .tab-btn:focus-visible { outline: 2px solid var(--soybean); outline-offset: 2px; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .file-meta {
+      display: none; font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+      padding: 6px 12px; background: rgba(0, 0, 0, 0.3); border-radius: 6px;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
 
-    .warning-banner i {
-      font-size: 20px;
+    /* Tabs */
+    .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 18px; overflow-x: auto; }
+    .tab-btn {
+      background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
+      padding: 10px 14px; font-family: var(--font-body); font-size: 13px; font-weight: 700; color: var(--muted);
     }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn[aria-selected="true"] { color: var(--soybean); border-bottom-color: var(--soybean); }
+    .tab-panel { font-size: 13.5px; color: var(--muted); }
+    .tab-panel[hidden] { display: none; }
+    .tab-panel ul { margin: 10px 0 0 20px; display: grid; gap: 8px; }
+    .tab-panel strong { color: var(--text); }
 
-    /* Toast system */
-    .toast-rack {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      z-index: 9999;
+    .flow { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+    .flow-node {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 10px 14px; border-radius: 8px; background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border);
     }
+    .flow-node b { font-family: var(--font-mono); font-size: 12.5px; color: var(--text); font-weight: 600; }
+    .flow-node span { font-size: 11.5px; text-align: right; }
+    .flow-arrow { align-self: center; color: var(--border-strong); line-height: 1; font-size: 12px; }
 
-    .toast {
-      background: rgba(13, 20, 15, 0.95);
-      border: 1px solid var(--accent-soybean);
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      color: var(--text-main);
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      animation: toastIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .spec-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .spec {
+      padding: 8px 12px; border-radius: 8px; font-size: 12px;
+      background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05);
     }
+    .spec b { display: block; color: var(--text); font-family: var(--font-mono); font-weight: 600; }
 
-    @keyframes toastIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
+    /* Comparison viewer */
+    .viewer {
+      position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; user-select: none;
+      border-radius: var(--radius-md); border: 1px solid var(--border); background: #020302;
     }
+    .viewer img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .viewer img[hidden] { display: none; }
+    #mapImage { clip-path: inset(0 50% 0 0); }
+    .viewer-empty {
+      position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+      padding: 24px; color: var(--muted); font-size: 13px;
+    }
+    .viewer-empty svg { width: 34px; height: 34px; margin-bottom: 8px; opacity: 0.6; }
+    .viewer-range {
+      position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; z-index: 5;
+    }
+    .viewer-range:disabled { cursor: default; }
+    .viewer-handle {
+      position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; transform: translateX(-50%);
+      background: #fff; box-shadow: 0 0 10px rgba(255, 255, 255, 0.7); z-index: 4; pointer-events: none; display: none;
+    }
+    .viewer-handle::after {
+      content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%;
+      background: #fff; color: #070a08; font-weight: 700; border: 2px solid var(--soybean);
+    }
+    .viewer.has-map .viewer-handle { display: block; }
+    .viewer-range:focus-visible ~ .viewer-handle::after { outline: 3px solid var(--soybean); outline-offset: 2px; }
+    .viewer-label {
+      position: absolute; top: 12px; z-index: 3; pointer-events: none; display: none;
+      padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+      text-transform: uppercase; background: rgba(0, 0, 0, 0.7); border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .viewer.has-map .viewer-label { display: block; }
+    .label-left { left: 12px; color: var(--soybean); }
+    .label-right { right: 12px; color: #fff; }
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 12px; font-weight: 600; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+    .note { margin-top: 10px; font-size: 11.5px; color: var(--muted); }
 
-    /* Footer styling */
+    /* Results */
+    .result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .result-class { font-family: var(--font-heading); font-size: 26px; font-weight: 700; }
+    .result-class.empty { color: var(--muted); }
+    .result-confidence { font-family: var(--font-mono); font-weight: 600; font-size: 18px; }
+    .bars { display: flex; flex-direction: column; gap: 10px; }
+    .bar {
+      padding: 10px 14px; border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .bar-meta { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+    .bar-track { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+    .bar-fill { height: 100%; width: 0; border-radius: 99px; transition: width 0.7s var(--ease); }
+    .advice {
+      display: none; gap: 14px; align-items: flex-start; margin-top: 16px; padding: 16px 18px;
+      border-radius: var(--radius-md); font-size: 13.5px;
+      background: rgba(46, 193, 88, 0.05); border: 1px solid rgba(46, 193, 88, 0.18);
+    }
+    .advice.visible { display: flex; }
+    .advice.high { background: rgba(231, 76, 60, 0.05); border-color: rgba(231, 76, 60, 0.2); }
+    .advice.medium { background: rgba(243, 156, 18, 0.05); border-color: rgba(243, 156, 18, 0.2); }
+    .advice-icon { font-size: 20px; line-height: 1.3; }
+    .advice-title { font-weight: 700; margin-bottom: 2px; }
+    .advice-text { color: var(--muted); }
+    .result-source { margin-top: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: right; }
+    .low-confidence { display: none; margin-top: 12px; font-size: 12.5px; color: var(--warn); }
+    .low-confidence.visible { display: block; }
+
+    /* Metrics */
+    .section-title { font-size: 24px; margin-bottom: 6px; }
+    .section-subtitle { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+    .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
+    .metric {
+      padding: 18px; text-align: center; border-radius: var(--radius-md);
+      background: var(--card); border: 1px solid var(--border);
+    }
+    .metric p { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 700; }
+    .metric strong { display: block; font-family: var(--font-heading); font-size: 28px; font-weight: 800; }
+    .lower { display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; }
+    .chart-box { position: relative; height: 260px; }
+    .chart-fallback { display: none; color: var(--muted); font-size: 13px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 9px 6px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+    td.num, th.num { text-align: right; font-family: var(--font-mono); }
+    td.name { font-weight: 700; }
+    td.desc { color: var(--muted); }
+
     footer {
-      margin-top: 40px;
-      padding: 24px 0;
-      border-top: 1px solid var(--border-glow);
-      color: var(--text-muted);
-      font-size: 12px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+      margin-top: 40px; padding: 24px 0; border-top: 1px solid var(--border);
+      color: var(--muted); font-size: 12px; text-align: center; display: grid; gap: 6px;
     }
 
-    footer a {
-      color: var(--accent-soybean);
-      text-decoration: none;
+    /* Toasts */
+    .toasts { position: fixed; right: 24px; bottom: 24px; z-index: 50; display: flex; flex-direction: column; gap: 10px; max-width: min(380px, calc(100vw - 48px)); }
+    .toast {
+      padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      background: rgba(13, 20, 15, 0.96); border: 1px solid var(--soybean); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      animation: toast-in 0.3s var(--ease);
     }
+    .toast.warn { border-color: var(--warn); }
+    .toast.error { border-color: var(--bad); }
+    @keyframes toast-in { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-    /* Responsiveness */
     @media (max-width: 1024px) {
-      .dashboard-grid, .snapshot-row {
-        grid-template-columns: 1fr;
-      }
-      .metrics-grid {
-        grid-template-columns: repeat(3, 1fr);
-      }
+      .grid, .lower { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(3, 1fr); }
     }
-
     @media (max-width: 600px) {
-      .container {
-        padding: 12px;
-      }
-      header {
-        border-radius: 20px;
-        flex-direction: column;
-        gap: 12px;
-        align-items: flex-start;
-        padding: 16px 20px;
-      }
-      .metrics-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-      .hero {
-        padding: 24px;
-      }
+      .container { padding: 16px; }
+      header { border-radius: 20px; flex-direction: column; align-items: flex-start; padding: 16px 20px; }
+      .hero, .card { padding: 22px; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .spec-list { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
   </style>
 
-  <!-- Lucide Icons CDN -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- Chart.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" defer></script>
 </head>
 <body>
-
   <div class="container">
-    
-    <!-- Top Nav -->
+
     <header>
       <div class="brand">
-        <div class="logo-mark">🌱</div>
-        <div class="brand-text">
-          <h1>MT-AHNet Intelligence</h1>
-          <p>Multi-Task Attention Crop-Weed Classifier</p>
+        <div class="logo-mark" aria-hidden="true">🌱</div>
+        <div>
+          <h1>MT-AHNet</h1>
+          <p>Attention-based crop &amp; weed classifier</p>
         </div>
       </div>
-      <div class="status-group">
-        <div class="status-badge">
-          <span id="statusDot" class="status-dot"></span>
-          <span id="statusText">Verifying Backend...</span>
-        </div>
-        <div class="status-badge" id="modeBadge" style="display: none;">
-          <span class="status-dot active"></span>
-          <span>Simulation Active</span>
-        </div>
+      <div class="status-badge" role="status" aria-live="polite">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">Connecting…</span>
       </div>
     </header>
 
-    <!-- Warning banner when backend is offline -->
-    <div class="warning-banner" id="fallbackBanner">
+    <div class="banner" id="banner" role="alert">
       <i data-lucide="alert-triangle"></i>
-      <div>
-        <strong>Local Simulation Mode Active:</strong> Flask server is offline. Running analysis client-side. Start <code>app.py</code> for live deep learning predictions.
-      </div>
+      <div id="bannerText"></div>
     </div>
 
-    <!-- Hero Introduction -->
     <section class="hero">
-      <h2>Precision Agriculture Analysis</h2>
+      <h2>Precision agriculture, patch by patch</h2>
       <p>
-        MT-AHNet combines multi-scale convolutional branches with Convolutional Block Attention Modules (CBAM) to deliver robust crop-weed identification in soybean environments. Upload field images to segment and classify soybeans, soils, grass weeds, and broadleaf weeds in real-time.
+        MT-AHNet combines multi-scale convolutions with CBAM channel and spatial attention to classify
+        image patches from soybean fields as <strong>soybean</strong>, <strong>grass weed</strong>,
+        <strong>broadleaf weed</strong> or <strong>bare soil</strong>. Upload a field patch to see the
+        prediction, the class probabilities and a colour map of where the vegetation is.
       </p>
-      <div class="chip-container">
-        <div class="chip"><i data-lucide="cpu"></i> Model: MT-AHNet Hybrid</div>
-        <div class="chip"><i data-lucide="layers"></i> Output: 4 classes</div>
-        <div class="chip yellow"><i data-lucide="shield-check"></i> Connected to Client-Side Heuristics</div>
+      <div class="chips">
+        <span class="chip"><i data-lucide="cpu"></i> CNN + CBAM attention</span>
+        <span class="chip"><i data-lucide="layers"></i> 4 classes</span>
+        <span class="chip"><i data-lucide="scan"></i> 128 × 128 RGB input</span>
       </div>
     </section>
 
-    <!-- Main Workspace -->
-    <div class="dashboard-grid">
-      
-      <!-- Left Panel: Uploader & Model Architecture Info -->
-      <div style="display: flex; flex-direction: column; gap: 24px;">
-        
-        <!-- Upload Card -->
-        <div class="card">
-          <div class="card-title">
-            <i data-lucide="upload-cloud"></i>
-            <h3>Field Image Workspace</h3>
-          </div>
-          <p class="card-subtitle">Select or drop field images. Supports JPG, PNG, WEBP, and TIFF.</p>
-          
-          <div class="upload-zone" id="dropZone">
-            <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp,.tiff,.tif" />
-            <div class="scan-line" id="scanLine"></div>
-            <i data-lucide="image" class="upload-icon"></i>
-            <p class="upload-text">Drag image here or click to browse</p>
-            <p class="upload-hint">Upload crop rows, weeds, or bare soils for best segmentation accuracy.</p>
-          </div>
+    <div class="grid">
+      <div class="column">
 
-          <div class="action-btn-row">
-            <button class="btn btn-primary" id="predictBtn" disabled>
-              <i data-lucide="sparkles"></i> Run Prediction
+        <section class="card" aria-labelledby="uploadTitle">
+          <div class="card-title"><i data-lucide="upload-cloud"></i><h3 id="uploadTitle">Field image</h3></div>
+          <p class="card-subtitle">JPG, PNG, WEBP, BMP or TIFF. Works best on close-up patches like the training data.</p>
+
+          <label class="upload-zone" id="dropZone">
+            <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,image/*" aria-describedby="uploadHint" />
+            <div class="scan-line"></div>
+            <div class="upload-icon"><i data-lucide="image-plus"></i></div>
+            <p class="upload-text">Drop an image here or click to browse</p>
+            <p class="upload-hint" id="uploadHint">Crop rows, weeds or bare soil. Maximum <span id="maxSize">10 MB</span>.</p>
+          </label>
+
+          <div class="actions">
+            <button class="btn" id="predictBtn" type="button" disabled>
+              <i data-lucide="sparkles"></i><span>Run prediction</span>
             </button>
-            <span id="uploadMeta" class="upload-meta" style="display: none;"></span>
+            <span id="fileMeta" class="file-meta"></span>
           </div>
-        </div>
+        </section>
 
-        <!-- Model Context Tabs Card -->
-        <div class="card">
-          <div class="card-title">
-            <i data-lucide="book-open"></i>
-            <h3>Architecture & Technical Context</h3>
-          </div>
-          <p class="card-subtitle">Underlying specifications of the MT-AHNet model structure.</p>
+        <section class="card" aria-labelledby="archTitle">
+          <div class="card-title"><i data-lucide="book-open"></i><h3 id="archTitle">How the model works</h3></div>
+          <p class="card-subtitle">The network that runs behind the prediction.</p>
 
-          <div class="tab-container">
-            <button class="tab-btn active" data-tab="arch">Model Flow</button>
-            <button class="tab-btn" data-tab="paper">CBAM Attention</button>
-            <button class="tab-btn" data-tab="specs">Research Specs</button>
+          <div class="tabs" role="tablist">
+            <button class="tab-btn" role="tab" id="tab-flow" aria-controls="panel-flow" aria-selected="true">Architecture</button>
+            <button class="tab-btn" role="tab" id="tab-cbam" aria-controls="panel-cbam" aria-selected="false" tabindex="-1">CBAM attention</button>
+            <button class="tab-btn" role="tab" id="tab-train" aria-controls="panel-train" aria-selected="false" tabindex="-1">Training</button>
           </div>
 
-          <!-- Tab 1: Architecture Flow -->
-          <div class="tab-panel active" id="tab-arch">
-            <p style="margin-bottom: 12px;">The MT-AHNet model uses multi-scale features combined with attention mechanics to map spatial vegetation masks.</p>
-            <div class="arch-flow">
-              <div class="flow-node">
-                <span class="flow-node-title">Input Layer</span>
-                <span class="flow-node-desc">128 × 128 × 3 RGB Image</span>
-              </div>
-              <div class="flow-arrow"><i data-lucide="chevron-down"></i></div>
-              <div class="flow-node" style="cursor: help;" title="Parallel 1x1, 3x3, 5x5 kernels combine multi-scale vegetation features.">
-                <span class="flow-node-title">Multi-scale Convolutions</span>
-                <span class="flow-node-desc">Parallel 1×1, 3×3, 5×5 kernels</span>
-              </div>
-              <div class="flow-arrow"><i data-lucide="chevron-down"></i></div>
-              <div class="flow-node" style="cursor: help;" title="CBAM dynamically highlights vital regions using spatial and channel attention weights.">
-                <span class="flow-node-title">CBAM Attention Block</span>
-                <span class="flow-node-desc">Channel + Spatial Weights</span>
-              </div>
-              <div class="flow-arrow"><i data-lucide="chevron-down"></i></div>
-              <div class="flow-node">
-                <span class="flow-node-title">Residual Downsampling</span>
-                <span class="flow-node-desc">Deep Feature Learning Stages</span>
-              </div>
-              <div class="flow-arrow"><i data-lucide="chevron-down"></i></div>
-              <div class="flow-node">
-                <span class="flow-node-title">Softmax Classifier</span>
-                <span class="flow-node-desc">4-Class Probabilities output</span>
-              </div>
+          <div class="tab-panel" role="tabpanel" id="panel-flow" aria-labelledby="tab-flow">
+            <div class="flow">
+              <div class="flow-node"><b>Input</b><span>128 × 128 × 3 RGB, scaled to [0, 1]</span></div>
+              <div class="flow-arrow" aria-hidden="true">▼</div>
+              <div class="flow-node"><b>Multi-scale block</b><span>Parallel 1×1, 3×3, 5×5 convolutions</span></div>
+              <div class="flow-arrow" aria-hidden="true">▼</div>
+              <div class="flow-node"><b>3 × residual CBAM stage</b><span>64 → 128 → 256 filters, stride 2</span></div>
+              <div class="flow-arrow" aria-hidden="true">▼</div>
+              <div class="flow-node"><b>Global average pool</b><span>+ dropout 0.3</span></div>
+              <div class="flow-arrow" aria-hidden="true">▼</div>
+              <div class="flow-node"><b>Softmax</b><span>4 class probabilities</span></div>
             </div>
           </div>
 
-          <!-- Tab 2: CBAM Attention Explanation -->
-          <div class="tab-panel" id="tab-paper">
-            <p style="margin-bottom: 10px;">The <strong>Convolutional Block Attention Module (CBAM)</strong> sequentially applies channel and spatial attention:</p>
-            <ul style="margin-left: 20px; display: flex; flex-direction: column; gap: 8px;">
-              <li>
-                <strong>Channel Attention:</strong> Focuses on <em>'what'</em> features are important (e.g. green vegetation vs brown soil) by pooling spatial dimensions and applying shared MLPs.
-              </li>
-              <li>
-                <strong>Spatial Attention:</strong> Focuses on <em>'where'</em> the targets are (localizing weed clusters) by average-pooling and max-pooling along channels, then convolving with a 7x7 filter.
-              </li>
+          <div class="tab-panel" role="tabpanel" id="panel-cbam" aria-labelledby="tab-cbam" hidden>
+            <p>The <strong>Convolutional Block Attention Module</strong> (Woo et al., 2018) re-weights features in two steps:</p>
+            <ul>
+              <li><strong>Channel attention</strong> decides <em>what</em> matters: average- and max-pooled descriptors pass through a shared MLP to weight each feature map.</li>
+              <li><strong>Spatial attention</strong> decides <em>where</em> to look: channel-wise mean and max maps pass through a 7×7 convolution to weight each location.</li>
             </ul>
-            <p style="margin-top: 12px; font-style: italic;">This mechanism prevents the network from losing fine weed structures in soil-heavy regions.</p>
+            <p style="margin-top: 12px;">This helps the network focus on thin leaves and stems against soil-dominated backgrounds.</p>
           </div>
 
-          <!-- Tab 3: Model Specifications -->
-          <div class="tab-panel" id="tab-specs">
-            <p>Training and architecture configurations documented in the research paper:</p>
-            <div class="paper-spec-list">
-              <div class="paper-spec-item">
-                <i data-lucide="check-circle-2"></i>
-                <span>Optimizer: Adam (1e-4)</span>
-              </div>
-              <div class="paper-spec-item">
-                <i data-lucide="check-circle-2"></i>
-                <span>Loss: Cross Entropy</span>
-              </div>
-              <div class="paper-spec-item">
-                <i data-lucide="check-circle-2"></i>
-                <span>Model Size: 12.4 MB</span>
-              </div>
-              <div class="paper-spec-item">
-                <i data-lucide="check-circle-2"></i>
-                <span>Parameters: ~197K</span>
-              </div>
-            </div>
-            <p style="margin-top: 12px;">Trained on high-definition multispectral agronomy datasets including varying lighting and row configurations.</p>
+          <div class="tab-panel" role="tabpanel" id="panel-train" aria-labelledby="tab-train" hidden>
+            <p id="trainIntro">Training settings from the loaded model's metadata.</p>
+            <div class="spec-list" id="trainSpecs"></div>
           </div>
-
-        </div>
-
+        </section>
       </div>
 
-      <!-- Right Panel: Swipe Segmentation Viewport & Results Dashboard -->
-      <div style="display: flex; flex-direction: column; gap: 24px;">
-        
-        <!-- Viewer Card -->
-        <div class="card split-viewport-card">
-          <div class="card-title">
-            <i data-lucide="eye"></i>
-            <h3>Segmentation Live-View</h3>
+      <div class="column">
+        <section class="card" aria-labelledby="viewerTitle">
+          <div class="card-title"><i data-lucide="eye"></i><h3 id="viewerTitle">Vegetation map</h3></div>
+          <p class="card-subtitle">Drag across the image to compare the photo with its colour map.</p>
+
+          <div class="viewer" id="viewer">
+            <img id="photoImage" alt="Uploaded field image" hidden />
+            <img id="mapImage" alt="Colour map of vegetation in the uploaded image" hidden />
+            <div class="viewer-empty" id="viewerEmpty">
+              <div><i data-lucide="image"></i><p id="viewerEmptyText">Upload an image to begin.</p></div>
+            </div>
+            <span class="viewer-label label-left">Colour map</span>
+            <span class="viewer-label label-right">Photo</span>
+            <input class="viewer-range" id="viewerRange" type="range" min="0" max="100" value="50" aria-label="Comparison position" disabled />
+            <div class="viewer-handle" id="viewerHandle"></div>
           </div>
-          <p class="card-subtitle">Drag the center slider to inspect the generated crop-weed boundary mask.</p>
-          
-          <div class="split-container" id="splitContainer">
-            <!-- Labels -->
-            <div class="viewport-label label-orig">Original Image</div>
-            <div class="viewport-label label-seg">Segmented Mask</div>
-            
-            <!-- Canvas Elements -->
-            <canvas id="canvasOriginal" class="viewport-canvas"></canvas>
-            <canvas id="canvasSegmented" class="viewport-canvas"></canvas>
-            
-            <!-- Slider element -->
-            <div class="slider-handle" id="sliderHandle">
-              <div class="slider-button" id="sliderButton">
-                <i data-lucide="arrows-left-right" style="width: 16px; height: 16px;"></i>
-              </div>
-            </div>
 
-            <!-- Legend Overlay -->
-            <div class="legend-overlay" id="legendOverlay">
-              <div class="legend-item">
-                <div class="legend-color" style="background-color: var(--accent-soybean);"></div>
-                <span>Soybean</span>
-              </div>
-              <div class="legend-item">
-                <div class="legend-color" style="background-color: var(--accent-grass);"></div>
-                <span>Grass Weed</span>
-              </div>
-              <div class="legend-item">
-                <div class="legend-color" style="background-color: var(--accent-broadleaf);"></div>
-                <span>Broadleaf Weed</span>
-              </div>
-              <div class="legend-item">
-                <div class="legend-color" style="background-color: var(--accent-soil);"></div>
-                <span>Soil</span>
-              </div>
-            </div>
+          <div class="legend" aria-label="Colour map legend">
+            <span><i style="background: var(--soybean);"></i>Soybean-like</span>
+            <span><i style="background: var(--grass);"></i>Grass-like</span>
+            <span><i style="background: var(--broadleaf);"></i>Broadleaf-like</span>
+            <span><i style="background: var(--soil);"></i>Soil</span>
           </div>
-        </div>
+          <p class="note">The colour map is a hue-based visual aid computed on the server. It is not the model's output:
+            it separates vegetation from soil well, but cannot reliably tell the plant classes apart.</p>
+        </section>
 
-        <!-- Prediction Output Card -->
-        <div class="card">
-          <div class="card-title">
-            <i data-lucide="bar-chart-3"></i>
-            <h3>Inference Dashboard</h3>
-          </div>
-          
-          <div class="result-section">
-            <div class="predicted-badge-row">
-              <div class="result-pill" id="predictedClass">
-                <span style="color: var(--text-muted);">Awaiting Inference</span>
-              </div>
-              <div id="confidenceVal" style="font-family: var(--font-mono); font-weight: 700; color: var(--accent-soybean); font-size: 18px;"></div>
+        <section class="card" aria-labelledby="resultTitle">
+          <div class="card-title"><i data-lucide="bar-chart-3"></i><h3 id="resultTitle">Prediction</h3></div>
+
+          <div aria-live="polite">
+            <div class="result-head">
+              <div class="result-class empty" id="resultClass">Awaiting an image</div>
+              <div class="result-confidence" id="resultConfidence"></div>
             </div>
-
-            <!-- Class Probabilities Meters -->
-            <div class="prob-bar-stack" id="probabilitiesStack">
-              <!-- Soybean bar -->
-              <div class="prob-bar-container">
-                <div class="prob-bar-meta">
-                  <span>🌿 Soybean Crop</span>
-                  <span id="pct-soybean">0.0%</span>
-                </div>
-                <div class="prob-bar-bg">
-                  <div class="prob-bar-fill" id="fill-soybean" style="background-color: var(--accent-soybean);"></div>
-                </div>
-              </div>
-
-              <!-- Grass Weed bar -->
-              <div class="prob-bar-container">
-                <div class="prob-bar-meta">
-                  <span>🌾 Grass Weed</span>
-                  <span id="pct-grass">0.0%</span>
-                </div>
-                <div class="prob-bar-bg">
-                  <div class="prob-bar-fill" id="fill-grass" style="background-color: var(--accent-grass);"></div>
-                </div>
-              </div>
-
-              <!-- Broadleaf Weed bar -->
-              <div class="prob-bar-container">
-                <div class="prob-bar-meta">
-                  <span>🍁 Broadleaf Weed</span>
-                  <span id="pct-broadleaf">0.0%</span>
-                </div>
-                <div class="prob-bar-bg">
-                  <div class="prob-bar-fill" id="fill-broadleaf" style="background-color: var(--accent-broadleaf);"></div>
-                </div>
-              </div>
-
-              <!-- Soil bar -->
-              <div class="prob-bar-container">
-                <div class="prob-bar-meta">
-                  <span>🟫 Bare Soil</span>
-                  <span id="pct-soil">0.0%</span>
-                </div>
-                <div class="prob-bar-bg">
-                  <div class="prob-bar-fill" id="fill-soil" style="background-color: var(--accent-soil);"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Agronomic Recommendation Box -->
-            <div class="agronomy-box" id="agronomyBox" style="display: none;">
-              <div class="agronomy-icon" id="agronomyIcon">🌿</div>
+            <div class="bars" id="bars"></div>
+            <p class="low-confidence" id="lowConfidence">Low confidence: the model is unsure about this image. Try a closer, well-lit patch.</p>
+            <div class="advice" id="advice">
+              <div class="advice-icon" id="adviceIcon" aria-hidden="true"></div>
               <div>
-                <div class="agronomy-title" id="agronomyTitle">Soybean Healthy</div>
-                <div class="agronomy-desc" id="agronomyDesc">Healthy crop canopy detected. Maintain routine field scouting.</div>
+                <div class="advice-title" id="adviceTitle"></div>
+                <div class="advice-text" id="adviceText"></div>
               </div>
             </div>
-
-            <div style="font-size: 11px; color: var(--text-muted); text-align: right; font-family: var(--font-mono);" id="predictSource"></div>
+            <div class="result-source" id="resultSource"></div>
           </div>
-        </div>
-
+        </section>
       </div>
-
     </div>
 
-    <!-- Bottom Section: Metrics & Dataset composition -->
-    <div class="metrics-section">
-      <h3 style="font-family: var(--font-heading); font-size: 24px; margin-bottom: 16px;">Validation & Dataset Stats</h3>
-      
-      <!-- Metrics Grid -->
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <p class="metric-title">Accuracy</p>
-          <p class="metric-value" id="valAccuracy">94.2%</p>
-        </div>
-        <div class="metric-card">
-          <p class="metric-title">Precision</p>
-          <p class="metric-value" id="valPrecision">92.8%</p>
-        </div>
-        <div class="metric-card">
-          <p class="metric-title">Recall</p>
-          <p class="metric-value" id="valRecall">91.5%</p>
-        </div>
-        <div class="metric-card">
-          <p class="metric-title">F1 Score</p>
-          <p class="metric-value" id="valF1">92.1%</p>
-        </div>
-        <div class="metric-card">
-          <p class="metric-title">Val Loss</p>
-          <p class="metric-value" id="valLoss">0.142</p>
-        </div>
+    <section aria-labelledby="metricsTitle">
+      <h3 class="section-title" id="metricsTitle">Model evaluation</h3>
+      <p class="section-subtitle" id="metricsSubtitle">Loading…</p>
+
+      <div class="metrics">
+        <div class="metric"><p>Accuracy</p><strong id="mAccuracy">—</strong></div>
+        <div class="metric"><p>Precision</p><strong id="mPrecision">—</strong></div>
+        <div class="metric"><p>Recall</p><strong id="mRecall">—</strong></div>
+        <div class="metric"><p>F1 score</p><strong id="mF1">—</strong></div>
+        <div class="metric"><p>Test loss</p><strong id="mLoss">—</strong></div>
       </div>
 
-      <div class="snapshot-row">
-        <!-- Dataset Breakdown Chart -->
+      <div class="lower">
         <div class="card">
-          <div class="card-title">
-            <i data-lucide="pie-chart"></i>
-            <h3>Training Set Class Composition</h3>
-          </div>
-          <p class="card-subtitle">Distribution of crop, weed, and soil pixels used in training the MT-AHNet classifier.</p>
-          <div class="dataset-chart-wrapper">
-            <div class="chart-container">
-              <canvas id="datasetChart"></canvas>
-            </div>
-          </div>
+          <div class="card-title"><i data-lucide="pie-chart"></i><h3>Dataset composition</h3></div>
+          <p class="card-subtitle" id="datasetSubtitle">Image patches per class.</p>
+          <div class="chart-box"><canvas id="datasetChart" aria-label="Bar chart of images per class" role="img"></canvas></div>
+          <p class="chart-fallback" id="chartFallback">Dataset counts are not available.</p>
         </div>
 
-        <!-- Class Analysis Table -->
-        <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
-          <div>
-            <div class="card-title">
-              <i data-lucide="list-checks"></i>
-              <h3>Target Key Elements</h3>
-            </div>
-            <p class="card-subtitle">A summary of the target agricultural components categorized by the MT-AHNet model.</p>
-            
-            <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
-              <div style="display: flex; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
-                <span style="font-weight: 700; color: var(--accent-soybean);">🌿 Soybean (Glycine max)</span>
-                <span style="color: var(--text-muted);">Core crop to be protected.</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
-                <span style="font-weight: 700; color: var(--accent-grass);">🌾 Grass Weeds</span>
-                <span style="color: var(--text-muted);">Includes foxtail, crabgrass, barnyardgrass.</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
-                <span style="font-weight: 700; color: var(--accent-broadleaf);">🍁 Broadleaf Weeds</span>
-                <span style="color: var(--text-muted);">Includes pigweed, ragweed, velvetleaf.</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; font-size: 13px;">
-                <span style="font-weight: 700; color: var(--accent-soil);">🟫 Bare Soil</span>
-                <span style="color: var(--text-muted);">Ground background layer.</span>
-              </div>
-            </div>
-          </div>
-
-          <div style="background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
-            <i data-lucide="info" style="color: var(--accent-soybean); flex-shrink: 0;"></i>
-            <span>Early identification prevents weed density outbreaks and minimizes post-emergence chemical use by target spraying.</span>
-          </div>
+        <div class="card">
+          <div class="card-title"><i data-lucide="list-checks"></i><h3>Classes</h3></div>
+          <p class="card-subtitle">Per-class F1 on the held-out test set, when a trained model is loaded.</p>
+          <table>
+            <thead><tr><th>Class</th><th>Description</th><th class="num">Images</th><th class="num">F1</th></tr></thead>
+            <tbody id="classTable"></tbody>
+          </table>
         </div>
-
       </div>
-    </div>
+    </section>
 
-    <!-- Footer -->
     <footer>
-      <div>Developed for precision crop row monitoring & robotic weeding automation.</div>
+      <div>MT-AHNet crop / weed classifier · built for precision weed management research.</div>
       <div>
-        <span>Model Base Paper Reference: </span>
-        <a href="base_paper.pdf" target="_blank">MT-AHNet Base Paper (PDF)</a>
+        Dataset: <a href="https://doi.org/10.1016/j.compag.2017.10.027" target="_blank" rel="noopener">dos Santos Ferreira et al., 2017</a>
+        · Attention: <a href="https://arxiv.org/abs/1807.06521" target="_blank" rel="noopener">CBAM, Woo et al., 2018</a>
       </div>
     </footer>
-
   </div>
 
-  <div class="toast-rack" id="toastRack"></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <!-- JavaScript logic -->
   <script>
-    // Initialize Lucide Icons
-    lucide.createIcons();
+    'use strict';
 
-    // Base Configurations
-    const API_BASE = window.location.origin;
-    let isBackendOnline = false;
-    let allowClientSimulation = false;
-    let currentImage = null;
-    let originalImageWidth = 0;
-    let originalImageHeight = 0;
-    
-    // Class names matching python backend
-    const CLASS_NAMES = ['Broadleaf Weed', 'Grass Weed', 'Soil', 'Soybean'];
-    const CLASS_STYLES = {
-      'Soybean': { name: 'Soybean Crop', color: '#2ec158', icon: '🌿', action: 'Healthy crop canopy. No corrective action required. Monitor weekly.' },
-      'Grass Weed': { name: 'Grass Weed', color: '#f39c12', icon: '🌾', action: 'Grass weed detected. High risk of crop encroachment. Apply post-emergence graminicides (e.g. Clethodim) within 7-10 days.' },
-      'Broadleaf Weed': { name: 'Broadleaf Weed', color: '#e74c3c', icon: '🍁', action: 'Broadleaf weed infestation detected. Critical risk. Apply selective herbicides (e.g. Fomesafen or Bentazon) immediately.' },
-      'Soil': { name: 'Bare Soil', color: '#a17043', icon: '🟫', action: 'Bare soil region. Suitable for pre-emergence control buffers. Monitor moisture indexes.' }
-    };
+    // Must match backend/constants.py.
+    const CLASSES = [
+      { key: 'Soybean', label: 'Soybean', icon: '🌿', color: '#2ec158', desc: 'The crop to protect (Glycine max).' },
+      { key: 'Grass Weed', label: 'Grass weed', icon: '🌾', color: '#f39c12', desc: 'Narrow-leaf weeds such as foxtail.' },
+      { key: 'Broadleaf Weed', label: 'Broadleaf weed', icon: '🍁', color: '#e74c3c', desc: 'Wide-leaf weeds such as pigweed.' },
+      { key: 'Soil', label: 'Bare soil', icon: '🟫', color: '#a17043', desc: 'Ground with no vegetation.' },
+    ];
+    const CLASS_BY_KEY = Object.fromEntries(CLASSES.map(c => [c.key, c]));
+    const SUPPORTED = ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tif', 'tiff'];
+    const HEALTH_INTERVAL_MS = 30000;
 
-    // UI elements
-    const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
-    const modeBadge = document.getElementById('modeBadge');
-    const fallbackBanner = document.getElementById('fallbackBanner');
-    
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-    const predictBtn = document.getElementById('predictBtn');
-    const uploadMeta = document.getElementById('uploadMeta');
-    const scanLine = document.getElementById('scanLine');
+    const $ = id => document.getElementById(id);
+    const state = { file: null, previewUrl: null, mode: null, maxBytes: 10 * 1024 * 1024, chart: null, busy: false };
 
-    // Canvas elements & Split screen slider
-    const canvasOriginal = document.getElementById('canvasOriginal');
-    const canvasSegmented = document.getElementById('canvasSegmented');
-    const splitContainer = document.getElementById('splitContainer');
-    const sliderHandle = document.getElementById('sliderHandle');
-    const sliderButton = document.getElementById('sliderButton');
-    const legendOverlay = document.getElementById('legendOverlay');
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
 
-    // Result elements
-    const predictedClass = document.getElementById('predictedClass');
-    const confidenceVal = document.getElementById('confidenceVal');
-    const predictSource = document.getElementById('predictSource');
-    const agronomyBox = document.getElementById('agronomyBox');
-    const agronomyIcon = document.getElementById('agronomyIcon');
-    const agronomyTitle = document.getElementById('agronomyTitle');
-    const agronomyDesc = document.getElementById('agronomyDesc');
+    function toast(message, kind = 'info') {
+      const el = document.createElement('div');
+      el.className = `toast ${kind}`;
+      el.textContent = message;
+      $('toasts').appendChild(el);
+      setTimeout(() => el.remove(), 4500);
+    }
 
-    // Stats / Metrics Elements
-    const mAccuracy = document.getElementById('valAccuracy');
-    const mPrecision = document.getElementById('valPrecision');
-    const mRecall = document.getElementById('valRecall');
-    const mF1 = document.getElementById('valF1');
-    const mLoss = document.getElementById('valLoss');
+    function pct(value, digits = 1) {
+      return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(digits)}%` : '—';
+    }
 
-    // Setup interactive tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+    function formatBytes(bytes) {
+      return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+
+    // ---------- Tabs ----------
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    function selectTab(tab) {
+      tabs.forEach(t => {
+        const selected = t === tab;
+        t.setAttribute('aria-selected', String(selected));
+        t.tabIndex = selected ? 0 : -1;
+        $(t.getAttribute('aria-controls')).hidden = !selected;
+      });
+    }
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => selectTab(tab));
+      tab.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        selectTab(next);
+        next.focus();
       });
     });
 
-    // Helper: Toast notifications
-    function showToast(text, type = 'success') {
-      const toast = document.createElement('div');
-      toast.className = 'toast';
-      toast.innerHTML = `<i data-lucide="info" style="width: 16px; height: 16px;"></i> <span>${text}</span>`;
-      document.getElementById('toastRack').appendChild(toast);
-      lucide.createIcons({nodeList: [toast]});
-      setTimeout(() => {
-        toast.style.animation = 'toastIn 0.3s reverse forwards';
-        setTimeout(() => toast.remove(), 300);
-      }, 3500);
+    // ---------- Server status ----------
+    function setStatus(mode, health) {
+      const dot = $('statusDot');
+      const banner = $('banner');
+      banner.className = 'banner';
+      if (mode === 'model') {
+        dot.className = 'status-dot ok';
+        $('statusText').textContent = 'Model ready';
+      } else if (mode === 'demo') {
+        dot.className = 'status-dot warn';
+        $('statusText').textContent = 'Demo mode';
+        banner.classList.add('visible');
+        $('bannerText').innerHTML = '<strong>Demo mode:</strong> no trained model is loaded, so predictions come from a simple '
+          + 'colour heuristic, not MT-AHNet. Train one with <code>python -m backend.train</code> and restart the server.';
+      } else if (mode === 'unavailable') {
+        dot.className = 'status-dot bad';
+        $('statusText').textContent = 'Model unavailable';
+        banner.classList.add('visible', 'error');
+        $('bannerText').textContent = `Predictions are unavailable: ${(health && health.model_error) || 'the model could not be loaded.'}`;
+      } else {
+        dot.className = 'status-dot bad';
+        $('statusText').textContent = 'Server offline';
+        banner.classList.add('visible', 'error');
+        $('bannerText').innerHTML = '<strong>Cannot reach the server.</strong> Start it with <code>python -m backend.app</code>, then reload this page.';
+      }
+      updatePredictButton();
     }
 
-    // Setup chart.js
-    let datasetChart = null;
-    function initDatasetChart(data) {
-      const ctx = document.getElementById('datasetChart').getContext('2d');
-      const counts = data || [7376, 3520, 1191, 3249]; // Fallback values
-      
-      if (datasetChart) {
-        datasetChart.destroy();
+    async function checkHealth() {
+      let mode = 'offline';
+      let health = null;
+      try {
+        const res = await fetch('/api/health', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        health = await res.json();
+        mode = health.mode;
+        if (health.max_upload_bytes) {
+          state.maxBytes = health.max_upload_bytes;
+          $('maxSize').textContent = formatBytes(state.maxBytes);
+        }
+      } catch (err) {
+        console.warn('Health check failed', err);
       }
+      const changed = mode !== state.mode;
+      state.mode = mode;
+      setStatus(mode, health);
+      if (changed && mode !== 'offline') loadStats();
+    }
 
-      datasetChart = new Chart(ctx, {
+    // ---------- Stats ----------
+    async function loadStats() {
+      let data = null;
+      try {
+        const res = await fetch('/api/stats', { cache: 'no-store' });
+        if (res.ok) data = await res.json();
+      } catch (err) {
+        console.warn('Stats request failed', err);
+      }
+      renderStats(data);
+    }
+
+    function renderStats(data) {
+      const model = data && data.model;
+      const counts = data && data.dataset && data.dataset.class_counts;
+
+      $('mAccuracy').textContent = pct(model && model.accuracy);
+      $('mPrecision').textContent = pct(model && model.precision);
+      $('mRecall').textContent = pct(model && model.recall);
+      $('mF1').textContent = pct(model && model.f1_score);
+      $('mLoss').textContent = model && Number.isFinite(model.loss) ? model.loss.toFixed(3) : '—';
+      $('metricsSubtitle').textContent = model
+        ? `Measured on ${model.test_images ? model.test_images.toLocaleString() + ' ' : ''}held-out test images the model never saw during training. Precision, recall and F1 are macro averages over the 4 classes.`
+        : 'No trained model is loaded, so there are no metrics to show. Train a model to evaluate it on a held-out test set.';
+
+      renderTrainingSpecs(model);
+      renderClassTable(counts, model && model.per_class);
+      renderChart(counts);
+    }
+
+    function renderTrainingSpecs(model) {
+      const specs = $('trainSpecs');
+      specs.replaceChildren();
+      if (!model) {
+        $('trainIntro').textContent = 'No trained model is loaded yet. Run "python -m backend.train" to train one; its settings and metrics will appear here.';
+        return;
+      }
+      $('trainIntro').textContent = 'From the loaded model\'s metadata:';
+      const items = [
+        ['Version', model.version || '—'],
+        ['Parameters', model.parameters ? model.parameters.toLocaleString() : '—'],
+        ['Model size', model.model_size_bytes ? formatBytes(model.model_size_bytes) : '—'],
+        ['Trained', model.created_at ? new Date(model.created_at).toLocaleDateString() : '—'],
+        ['Loss', 'Weighted cross-entropy'],
+        ['Optimizer', 'Adam + early stopping'],
+      ];
+      for (const [label, value] of items) {
+        const el = document.createElement('div');
+        el.className = 'spec';
+        el.append(label);
+        const b = document.createElement('b');
+        b.textContent = value;
+        el.appendChild(b);
+        specs.appendChild(el);
+      }
+    }
+
+    function renderClassTable(counts, perClass) {
+      const body = $('classTable');
+      body.replaceChildren();
+      for (const c of CLASSES) {
+        const row = document.createElement('tr');
+        const cells = [
+          ['name', `${c.icon} ${c.label}`],
+          ['desc', c.desc],
+          ['num', counts && counts[c.key] != null ? counts[c.key].toLocaleString() : '—'],
+          ['num', perClass && perClass[c.key] ? pct(perClass[c.key].f1_score) : '—'],
+        ];
+        for (const [cls, text] of cells) {
+          const td = document.createElement('td');
+          td.className = cls;
+          td.textContent = text;
+          row.appendChild(td);
+        }
+        row.firstChild.style.color = c.color;
+        body.appendChild(row);
+      }
+    }
+
+    function renderChart(counts) {
+      const canvas = $('datasetChart');
+      const fallback = $('chartFallback');
+      if (!counts || !window.Chart) {
+        canvas.parentElement.style.display = 'none';
+        fallback.style.display = 'block';
+        fallback.textContent = counts ? 'Chart library failed to load.' : 'Dataset counts are not available.';
+        return;
+      }
+      canvas.parentElement.style.display = '';
+      fallback.style.display = 'none';
+      const total = CLASSES.reduce((sum, c) => sum + (counts[c.key] || 0), 0);
+      $('datasetSubtitle').textContent = `${total.toLocaleString()} image patches. The classes are imbalanced, so training weights the loss by class frequency.`;
+      if (state.chart) state.chart.destroy();
+      state.chart = new window.Chart(canvas, {
         type: 'bar',
         data: {
-          labels: ['Soybean', 'Grass Weed', 'Broadleaf Weed', 'Bare Soil'],
+          labels: CLASSES.map(c => c.label),
           datasets: [{
-            label: 'Samples Count',
-            data: counts,
-            backgroundColor: [
-              'rgba(46, 193, 88, 0.45)', // Soybean
-              'rgba(243, 156, 18, 0.45)', // Grass weed
-              'rgba(231, 76, 60, 0.45)',  // Broadleaf
-              'rgba(161, 112, 67, 0.45)'   // Soil
-            ],
-            borderColor: [
-              '#2ec158',
-              '#f39c12',
-              '#e74c3c',
-              '#a17043'
-            ],
+            label: 'Images',
+            data: CLASSES.map(c => counts[c.key] || 0),
+            backgroundColor: CLASSES.map(c => c.color + '73'),
+            borderColor: CLASSES.map(c => c.color),
             borderWidth: 1.5,
-            borderRadius: 6
-          }]
+            borderRadius: 6,
+          }],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
+          plugins: { legend: { display: false } },
           scales: {
-            y: {
-              grid: { color: 'rgba(255, 255, 255, 0.05)' },
-              ticks: { color: '#8fa093', font: { family: 'Plus Jakarta Sans' } }
-            },
-            x: {
-              grid: { display: false },
-              ticks: { color: '#8fa093', font: { family: 'Plus Jakarta Sans' } }
-            }
-          }
-        }
+            y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a597' } },
+            x: { grid: { display: false }, ticks: { color: '#94a597' } },
+          },
+        },
       });
     }
 
-    // Connect and verify backend health
-    async function checkHealth() {
-      try {
-        const res = await fetch(`${API_BASE}/api/health`);
-        if (!res.ok) throw new Error('API server error');
-        const data = await res.json();
-        
-        isBackendOnline = true;
-        allowClientSimulation = data.demo_mode === true;
-        statusDot.className = data.model_loaded ? 'status-dot active' : 'status-dot warn';
-        statusText.textContent = data.model_loaded ? 'Model Ready' : 'Simulation Mode';
-        fallbackBanner.style.display = allowClientSimulation ? 'flex' : 'none';
-        modeBadge.style.display = allowClientSimulation ? 'inline-flex' : 'none';
-        
-        // Fetch stats
-        fetchStats();
-      } catch (err) {
-        console.warn('Backend server connection failed, entering Simulation Mode.', err);
-        isBackendOnline = false;
-        allowClientSimulation = false;
-        statusDot.className = 'status-dot warn';
-        statusText.textContent = 'Server Offline';
-        fallbackBanner.style.display = 'none';
-        modeBadge.style.display = 'none';
-        
-        // Initialize default stats/chart
-        initDatasetChart();
+    // ---------- File selection ----------
+    function updatePredictButton() {
+      const canPredict = state.mode === 'model' || state.mode === 'demo';
+      $('predictBtn').disabled = state.busy || !state.file || !canPredict;
+    }
+
+    function showViewer({ photo, map }) {
+      const viewer = $('viewer');
+      const photoImg = $('photoImage');
+      const mapImg = $('mapImage');
+      if (photo) {
+        photoImg.src = photo;
+        photoImg.hidden = false;
+        $('viewerEmpty').hidden = true;
       }
-    }
-
-    // Fetch Stats endpoint
-    async function fetchStats() {
-      try {
-        const res = await fetch(`${API_BASE}/api/stats`);
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        
-        // Populate stats
-        const m = data.model || {};
-        mAccuracy.textContent = `${(m.accuracy * 100).toFixed(1)}%`;
-        mPrecision.textContent = `${(m.precision * 100).toFixed(1)}%`;
-        mRecall.textContent = `${(m.recall * 100).toFixed(1)}%`;
-        mF1.textContent = `${(m.f1_score * 100).toFixed(1)}%`;
-        mLoss.textContent = m.val_loss !== undefined ? Number(m.val_loss).toFixed(4) : '--';
-        
-        // Prepare counts
-        const cl = (data.dataset && data.dataset.classes) || {};
-        const countData = [
-          (cl.Soybean && cl.Soybean.count) || 7376,
-          (cl['Grass Weed'] && cl['Grass Weed'].count) || 3520,
-          (cl['Broadleaf Weed'] && cl['Broadleaf Weed'].count) || 1191,
-          (cl.Soil && cl.Soil.count) || 3249
-        ];
-        initDatasetChart(countData);
-      } catch (err) {
-        initDatasetChart();
-      }
-    }
-
-    // Drag-and-Drop Handlers
-    ['dragenter', 'dragover'].forEach(name => {
-      dropZone.addEventListener(name, (e) => {
-        e.preventDefault();
-        dropZone.classList.add('dragging');
-      });
-    });
-
-    ['dragleave', 'drop'].forEach(name => {
-      dropZone.addEventListener(name, (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('dragging');
-      });
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-      const files = e.dataTransfer.files;
-      if (files.length) {
-        handleFileSelection(files[0]);
-      }
-    });
-
-    fileInput.addEventListener('change', () => {
-      if (fileInput.files.length) {
-        handleFileSelection(fileInput.files[0]);
-      }
-    });
-
-    // Handle File upload, render on original canvas, reset viewport
-    function handleFileSelection(file) {
-      currentImage = file;
-      uploadMeta.style.display = 'inline-block';
-      uploadMeta.textContent = `${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
-      
-      const reader = new FileReader();
-      reader.onload = function(event) {
-        const img = new Image();
-        img.onload = function() {
-          originalImageWidth = img.width;
-          originalImageHeight = img.height;
-          
-          // Draw to Original Canvas
-          canvasOriginal.width = img.width;
-          canvasOriginal.height = img.height;
-          const ctxOrig = canvasOriginal.getContext('2d');
-          ctxOrig.drawImage(img, 0, 0);
-
-          // Clear segmented canvas and hide legend
-          canvasSegmented.width = img.width;
-          canvasSegmented.height = img.height;
-          const ctxSeg = canvasSegmented.getContext('2d');
-          ctxSeg.clearRect(0, 0, img.width, img.height);
-          legendOverlay.classList.remove('visible');
-
-          // Reset slider swipe to center 50%
-          setSliderPos(50);
-
-          // Enable Run button
-          predictBtn.disabled = false;
-          showToast('Image loaded successfully.');
-        }
-        img.src = event.target.result;
-      }
-      reader.readAsDataURL(file);
-    }
-
-    // Slider Drag Logic
-    let isDragging = false;
-
-    function getContainerWidth() {
-      return splitContainer.getBoundingClientRect().width;
-    }
-
-    function setSliderPos(pct) {
-      if (pct < 0) pct = 0;
-      if (pct > 100) pct = 100;
-      sliderHandle.style.left = `${pct}%`;
-      
-      // Update clip-path on the upper (segmented) canvas
-      canvasSegmented.style.clipPath = `polygon(0 0, ${pct}% 0, ${pct}% 100%, 0 100%)`;
-    }
-
-    function handleDrag(e) {
-      if (!isDragging) return;
-      const rect = splitContainer.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const x = clientX - rect.left;
-      const pct = (x / rect.width) * 100;
-      setSliderPos(pct);
-    }
-
-    // Event listeners for dragging
-    sliderHandle.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      e.preventDefault();
-    });
-    
-    sliderHandle.addEventListener('touchstart', (e) => {
-      isDragging = true;
-      // touch listener doesn't need preventDefault usually for slider but prevents scrolling
-    });
-
-    window.addEventListener('mouseup', () => isDragging = false);
-    window.addEventListener('touchend', () => isDragging = false);
-    
-    window.addEventListener('mousemove', handleDrag);
-    window.addEventListener('touchmove', handleDrag);
-
-    // Click inside container also snaps slider to that point
-    splitContainer.addEventListener('click', (e) => {
-      if (e.target.closest('#sliderHandle')) return; // ignore click directly on handle
-      const rect = splitContainer.getBoundingClientRect();
-      const pct = ((e.clientX - rect.left) / rect.width) * 100;
-      
-      // Animate transition smoothly
-      sliderHandle.style.transition = 'left 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)';
-      canvasSegmented.style.transition = 'clip-path 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)';
-      
-      setSliderPos(pct);
-      
-      setTimeout(() => {
-        sliderHandle.style.transition = '';
-        canvasSegmented.style.transition = '';
-      }, 250);
-    });
-
-    // Client-side RGB/HSV Pixel Segmentation
-    // This loops over pixels of the loaded image on the canvas and outputs a color mask.
-    function generateClientSideSegmentation() {
-      const w = canvasOriginal.width;
-      const h = canvasOriginal.height;
-      if (w === 0 || h === 0) return null;
-
-      const ctxOrig = canvasOriginal.getContext('2d');
-      const ctxSeg = canvasSegmented.getContext('2d');
-      
-      // Draw original onto segmented canvas first as baseline overlay, then paint masks over it
-      ctxSeg.drawImage(canvasOriginal, 0, 0);
-
-      const imgData = ctxOrig.getImageData(0, 0, w, h);
-      const data = imgData.data;
-
-      // Prepare mask image buffer
-      const maskData = ctxSeg.getImageData(0, 0, w, h);
-      const maskPixels = maskData.data;
-
-      // Stats counters for pixels
-      let soybeanCount = 0;
-      let grassCount = 0;
-      let broadleafCount = 0;
-      let soilCount = 0;
-      let totalPixels = w * h;
-
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i+1];
-        const b = data[i+2];
-
-        // Convert RGB to HSV
-        const hsv = rgbToHsv(r, g, b);
-        const hVal = hsv[0];
-        const sVal = hsv[1];
-        const vVal = hsv[2];
-
-        // Classification Rules
-        let pixelClass = 'Soil'; // Default class is soil
-
-        // Check if vegetation (has high green color saturation)
-        // Green hues are generally 35° to 160°
-        if (hVal >= 32 && hVal <= 150 && sVal > 12 && vVal > 12) {
-          // Soybean vs Grass weed vs Broadleaf weed
-          if (hVal >= 58 && hVal <= 95) {
-            pixelClass = 'Soybean';
-          } else if (hVal >= 32 && hVal < 58) {
-            pixelClass = 'Grass Weed';
-          } else {
-            pixelClass = 'Broadleaf Weed';
-          }
-        } else if (r > g * 1.05 && r > b && (hVal < 32 || hVal > 340)) {
-          // Slightly reddish brown soil
-          pixelClass = 'Soil';
-        } else if (sVal < 10) {
-          // Low saturation pixels are soil or shadow background
-          pixelClass = 'Soil';
-        }
-
-        // Apply semi-transparent overlays on segmented mask canvas
-        // Soybean (Green)
-        if (pixelClass === 'Soybean') {
-          soybeanCount++;
-          maskPixels[i]   = Math.floor(r * 0.4 + 46 * 0.6);
-          maskPixels[i+1] = Math.floor(g * 0.4 + 193 * 0.6);
-          maskPixels[i+2] = Math.floor(b * 0.4 + 88 * 0.6);
-        }
-        // Grass Weed (Amber)
-        else if (pixelClass === 'Grass Weed') {
-          grassCount++;
-          maskPixels[i]   = Math.floor(r * 0.4 + 243 * 0.6);
-          maskPixels[i+1] = Math.floor(g * 0.4 + 156 * 0.6);
-          maskPixels[i+2] = Math.floor(b * 0.4 + 18 * 0.6);
-        }
-        // Broadleaf Weed (Rose/Red)
-        else if (pixelClass === 'Broadleaf Weed') {
-          broadleafCount++;
-          maskPixels[i]   = Math.floor(r * 0.4 + 231 * 0.6);
-          maskPixels[i+1] = Math.floor(g * 0.4 + 76 * 0.6);
-          maskPixels[i+2] = Math.floor(b * 0.4 + 60 * 0.6);
-        }
-        // Soil (Brown/Dimmed)
-        else {
-          soilCount++;
-          // Slightly dim soil pixels to emphasize vegetation
-          maskPixels[i]   = Math.floor(r * 0.65 + 161 * 0.1);
-          maskPixels[i+1] = Math.floor(g * 0.65 + 112 * 0.1);
-          maskPixels[i+2] = Math.floor(b * 0.65 + 67 * 0.1);
-        }
-      }
-
-      // Write mask pixels back to Segmented Canvas
-      ctxSeg.putImageData(maskData, 0, 0);
-
-      // Return percentages
-      return {
-        'Soybean': soybeanCount / totalPixels,
-        'Grass Weed': grassCount / totalPixels,
-        'Broadleaf Weed': broadleafCount / totalPixels,
-        'Soil': soilCount / totalPixels
-      };
-    }
-
-    // Convert RGB to HSV
-    function rgbToHsv(r, g, b) {
-      r /= 255; g /= 255; b /= 255;
-      let max = Math.max(r, g, b), min = Math.min(r, g, b);
-      let h = 0, s, v = max;
-      let d = max - min;
-      s = max === 0 ? 0 : d / max;
-      
-      if (max !== min) {
-        switch (max) {
-          case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-          case g: h = (b - r) / d + 2; break;
-          case b: h = (r - g) / d + 4; break;
-        }
-        h /= 6;
-      }
-      return [h * 360, s * 100, v * 100];
-    }
-
-    // Render results in gauges and cards
-    function displayResults(predClass, confidence, probabilities, demoMode) {
-      // 1. Title predicted label
-      const style = CLASS_STYLES[predClass] || { name: predClass, color: '#fff', icon: '🌿', action: '' };
-      predictedClass.innerHTML = `<span style="color: ${style.color}">${style.icon} ${style.name}</span>`;
-      
-      // 2. Confidence text
-      confidenceVal.textContent = `${(confidence * 100).toFixed(1)}%`;
-      confidenceVal.style.color = style.color;
-
-      // 3. Update progress bars
-      probabilitiesStack.style.display = 'flex';
-      
-      // Calculate normalized scale if sum is not 1
-      const totalProb = Object.values(probabilities).reduce((a, b) => a + b, 0) || 1;
-      
-      const pSoybean = probabilities['Soybean'] / totalProb;
-      const pGrass = probabilities['Grass Weed'] / totalProb;
-      const pBroadleaf = probabilities['Broadleaf Weed'] / totalProb;
-      const pSoil = probabilities['Soil'] / totalProb;
-
-      document.getElementById('pct-soybean').textContent = `${(pSoybean * 100).toFixed(1)}%`;
-      document.getElementById('fill-soybean').style.width = `${(pSoybean * 100).toFixed(1)}%`;
-
-      document.getElementById('pct-grass').textContent = `${(pGrass * 100).toFixed(1)}%`;
-      document.getElementById('fill-grass').style.width = `${(pGrass * 100).toFixed(1)}%`;
-
-      document.getElementById('pct-broadleaf').textContent = `${(pBroadleaf * 100).toFixed(1)}%`;
-      document.getElementById('fill-broadleaf').style.width = `${(pBroadleaf * 100).toFixed(1)}%`;
-
-      document.getElementById('pct-soil').textContent = `${(pSoil * 100).toFixed(1)}%`;
-      document.getElementById('fill-soil').style.width = `${(pSoil * 100).toFixed(1)}%`;
-
-      // 4. Agronomy recommendations card
-      agronomyBox.style.display = 'flex';
-      // Change borders based on risk
-      agronomyBox.className = 'agronomy-box';
-      if (predClass === 'Broadleaf Weed') {
-        agronomyBox.classList.add('alert-action');
-      } else if (predClass === 'Grass Weed') {
-        agronomyBox.classList.add('warn-action');
-      }
-      
-      agronomyIcon.textContent = style.icon;
-      agronomyTitle.textContent = `Action Report: ${style.name}`;
-      agronomyDesc.textContent = style.action;
-
-      // 5. Source label
-      predictSource.textContent = demoMode 
-        ? 'Inference Source: Client Heuristics' 
-        : 'Inference Source: Deep Learning (MT-AHNet)';
-
-      // 6. Fade in legend overlay on viewport
-      legendOverlay.classList.add('visible');
-
-      // Swipe slider reset to center with anim
-      setSliderPos(50);
-    }
-
-    // run Prediction workflow
-    async function executePrediction() {
-      if (!currentImage) return;
-
-      predictBtn.disabled = true;
-      predictBtn.innerHTML = `<i data-lucide="loader" style="animation: rotateLogo 1s linear infinite;"></i> Processing...`;
-      scanLine.style.display = 'block';
-
-      try {
-        // Always generate segmentation mask client-side in parallel
-        const pixPercentages = generateClientSideSegmentation();
-
-        if (isBackendOnline) {
-          // Run deep learning inference via backend API
-          const formData = new FormData();
-          formData.append('image', currentImage);
-
-          try {
-            const res = await fetch(`${API_BASE}/api/predict`, {
-              method: 'POST',
-              body: formData
-            });
-
-            if (!res.ok) {
-              const errBody = await res.json().catch(() => ({}));
-              throw new Error(errBody.error || `Server prediction status ${res.status}`);
-            }
-
-            const result = await res.json();
-            displayResults(
-              result.predicted_class,
-              result.confidence,
-              result.probabilities,
-              result.demo_mode || false
-            );
-            showToast(`Inference completed. Identified: ${result.predicted_class}`);
-
-          } catch (err) {
-            console.error('Deep Learning server error, falling back to heuristics.', err);
-            if (allowClientSimulation) {
-              showToast('Deep learning server failed. Fallback to client heuristics.', 'warn');
-              runClientSimulation(pixPercentages);
-            } else {
-              showToast('Prediction service is unavailable.', 'warn');
-            }
-          }
-        } else if (allowClientSimulation) {
-          // Local simulation only
-          await new Promise(resolve => setTimeout(resolve, 800));
-          runClientSimulation(pixPercentages);
-        } else {
-          showToast('Connect to the prediction service before running analysis.', 'warn');
-        }
-      } finally {
-        predictBtn.disabled = false;
-        predictBtn.innerHTML = `<i data-lucide="sparkles"></i> Run Prediction`;
-        scanLine.style.display = 'none';
-        lucide.createIcons();
-      }
-    }
-
-    // Run client side heuristic simulation
-    function runClientSimulation(percentages) {
-      if (!percentages) return;
-
-      const pSoybean = percentages['Soybean'];
-      const pGrass = percentages['Grass Weed'];
-      const pBroadleaf = percentages['Broadleaf Weed'];
-      const pSoil = percentages['Soil'];
-
-      const vegSum = pSoybean + pGrass + pBroadleaf;
-      let predClass = 'Soil';
-      let confidence = 0.5;
-      let probabilities = {};
-
-      if (vegSum < 0.08) {
-        predClass = 'Soil';
-        confidence = Math.min(0.99, Math.max(0.5, 0.8 + pSoil * 0.15));
-        const rem = 1.0 - confidence;
-        const otherSum = vegSum || 1.0;
-        probabilities = {
-          'Soil': confidence,
-          'Soybean': rem * (pSoybean / otherSum),
-          'Grass Weed': rem * (pGrass / otherSum),
-          'Broadleaf Weed': rem * (pBroadleaf / otherSum)
-        };
+      if (map) {
+        mapImg.src = map;
+        mapImg.hidden = false;
+        viewer.classList.add('has-map');
+        $('viewerRange').disabled = false;
+        setComparison(50);
       } else {
-        if (pSoybean >= pGrass && pSoybean >= pBroadleaf) {
-          predClass = 'Soybean';
-          confidence = Math.min(0.99, Math.max(0.4, 0.65 + (pSoybean / vegSum) * 0.3));
-        } else if (pGrass >= pSoybean && pGrass >= pBroadleaf) {
-          predClass = 'Grass Weed';
-          confidence = Math.min(0.99, Math.max(0.4, 0.65 + (pGrass / vegSum) * 0.3));
-        } else {
-          predClass = 'Broadleaf Weed';
-          confidence = Math.min(0.99, Math.max(0.4, 0.65 + (pBroadleaf / vegSum) * 0.3));
-        }
-        
-        const rem = 1.0 - confidence;
-        const dominantVal = predClass === 'Soybean' ? pSoybean : (predClass === 'Grass Weed' ? pGrass : pBroadleaf);
-        const otherSum = (1.0 - dominantVal) || 1.0;
-        
-        probabilities[predClass] = confidence;
-        ['Soybean', 'Grass Weed', 'Broadleaf Weed', 'Soil'].forEach(c => {
-          if (c === predClass) return;
-          const pVal = c === 'Soybean' ? pSoybean : (c === 'Grass Weed' ? pGrass : (c === 'Broadleaf Weed' ? pBroadleaf : pSoil));
-          probabilities[c] = rem * (pVal / otherSum);
-        });
+        mapImg.hidden = true;
+        viewer.classList.remove('has-map');
+        $('viewerRange').disabled = true;
       }
-
-      displayResults(predClass, confidence, probabilities, true);
-      showToast(`Simulation completed. Classified as ${predClass}`);
     }
 
-    // Initial triggers
-    predictBtn.addEventListener('click', executePrediction);
+    function resetViewer(message) {
+      $('photoImage').hidden = true;
+      $('mapImage').hidden = true;
+      $('viewer').classList.remove('has-map');
+      $('viewerRange').disabled = true;
+      $('viewerEmpty').hidden = false;
+      $('viewerEmptyText').textContent = message;
+    }
+
+    function setComparison(value) {
+      $('viewerRange').value = value;
+      $('mapImage').style.clipPath = `inset(0 ${100 - value}% 0 0)`;
+      $('viewerHandle').style.left = `${value}%`;
+    }
+    $('viewerRange').addEventListener('input', e => setComparison(Number(e.target.value)));
+
+    function selectFile(file) {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      if (!SUPPORTED.includes(ext) && !file.type.startsWith('image/')) {
+        toast('Unsupported file type. Use JPG, PNG, WEBP, BMP or TIFF.', 'error');
+        return;
+      }
+      if (file.size > state.maxBytes) {
+        toast(`That file is ${formatBytes(file.size)}; the limit is ${formatBytes(state.maxBytes)}.`, 'error');
+        return;
+      }
+      state.file = file;
+      $('fileMeta').style.display = 'inline-block';
+      $('fileMeta').textContent = `${file.name} · ${formatBytes(file.size)}`;
+      clearResults();
+
+      if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+      state.previewUrl = URL.createObjectURL(file);
+      const probe = new Image();
+      probe.onload = () => showViewer({ photo: state.previewUrl });
+      probe.onerror = () => resetViewer('Your browser cannot preview this format (for example TIFF). The preview will appear after you run the prediction.');
+      probe.src = state.previewUrl;
+      updatePredictButton();
+    }
+
+    $('fileInput').addEventListener('change', e => {
+      if (e.target.files.length) selectFile(e.target.files[0]);
+      e.target.value = '';
+    });
+    const dropZone = $('dropZone');
+    ['dragenter', 'dragover'].forEach(name => dropZone.addEventListener(name, e => {
+      e.preventDefault();
+      dropZone.classList.add('dragging');
+    }));
+    ['dragleave', 'drop'].forEach(name => dropZone.addEventListener(name, e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragging');
+    }));
+    dropZone.addEventListener('drop', e => {
+      if (e.dataTransfer.files.length) selectFile(e.dataTransfer.files[0]);
+    });
+
+    // ---------- Prediction ----------
+    function renderBars(probabilities) {
+      const bars = $('bars');
+      bars.replaceChildren();
+      for (const c of CLASSES) {
+        const value = probabilities ? probabilities[c.key] || 0 : 0;
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        const meta = document.createElement('div');
+        meta.className = 'bar-meta';
+        const name = document.createElement('span');
+        name.textContent = `${c.icon} ${c.label}`;
+        const val = document.createElement('span');
+        val.textContent = probabilities ? pct(value) : '—';
+        meta.append(name, val);
+        const track = document.createElement('div');
+        track.className = 'bar-track';
+        const fill = document.createElement('div');
+        fill.className = 'bar-fill';
+        fill.style.background = c.color;
+        track.appendChild(fill);
+        bar.append(meta, track);
+        bars.appendChild(bar);
+        requestAnimationFrame(() => { fill.style.width = `${(value * 100).toFixed(1)}%`; });
+      }
+    }
+
+    function clearResults() {
+      $('resultClass').className = 'result-class empty';
+      $('resultClass').textContent = 'Ready to analyse';
+      $('resultConfidence').textContent = '';
+      $('advice').className = 'advice';
+      $('lowConfidence').classList.remove('visible');
+      $('resultSource').textContent = '';
+      renderBars(null);
+    }
+
+    function renderResult(result) {
+      const c = CLASS_BY_KEY[result.predicted_class] || { label: result.predicted_class, icon: '🌿', color: '#fff' };
+      const head = $('resultClass');
+      head.className = 'result-class';
+      head.style.color = c.color;
+      head.textContent = `${c.icon} ${c.label}`;
+      $('resultConfidence').textContent = `${pct(result.confidence)} confidence`;
+      $('resultConfidence').style.color = c.color;
+      renderBars(result.probabilities);
+
+      const info = result.class_info || {};
+      $('advice').className = `advice visible ${info.risk || ''}`;
+      $('adviceIcon').textContent = c.icon;
+      $('adviceTitle').textContent = info.summary || c.label;
+      $('adviceText').textContent = info.action || '';
+      $('lowConfidence').classList.toggle('visible', Boolean(result.low_confidence));
+      $('resultSource').textContent = result.source === 'model'
+        ? `Source: MT-AHNet model · ${result.elapsed_ms} ms`
+        : `Source: colour heuristic (demo mode) · ${result.elapsed_ms} ms`;
+
+      showViewer({ photo: result.preview, map: result.vegetation_map });
+    }
+
+    async function predict() {
+      if (!state.file || state.busy) return;
+      state.busy = true;
+      updatePredictButton();
+      const btn = $('predictBtn');
+      btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i><span>Analysing…</span>';
+      refreshIcons();
+      dropZone.classList.add('busy');
+
+      try {
+        const form = new FormData();
+        form.append('image', state.file);
+        const res = await fetch('/api/predict', { method: 'POST', body: form });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `The server returned an error (HTTP ${res.status}).`);
+        renderResult(body);
+        toast(`Prediction: ${(CLASS_BY_KEY[body.predicted_class] || {}).label || body.predicted_class}`);
+      } catch (err) {
+        console.error(err);
+        const offline = err instanceof TypeError;
+        toast(offline ? 'Cannot reach the server.' : err.message, 'error');
+        if (offline) checkHealth();
+      } finally {
+        state.busy = false;
+        btn.innerHTML = '<i data-lucide="sparkles"></i><span>Run prediction</span>';
+        refreshIcons();
+        dropZone.classList.remove('busy');
+        updatePredictButton();
+      }
+    }
+    $('predictBtn').addEventListener('click', predict);
+
+    // ---------- Start ----------
+    window.addEventListener('load', () => {
+      refreshIcons();
+      if (state.mode) loadStats();  // Chart.js is ready now.
+    });
+    renderBars(null);
+    renderClassTable(null, null);
     checkHealth();
-    // Re-check server health every 30 seconds
-    setInterval(checkHealth, 30000);
+    setInterval(checkHealth, HEALTH_INTERVAL_MS);
   </script>
 </body>
 </html>

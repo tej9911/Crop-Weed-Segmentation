@@ -1,10 +1,24 @@
+# Python
 __pycache__/
-.pytest_cache/
 *.py[cod]
-*.log
-.env
+.pytest_cache/
 .venv/
 venv/
-models/*.keras
-models/*.h5
-models/*.json
+*.egg-info/
+
+# Environment and logs
+.env
+*.log
+
+# Trained model artifacts (large; share them separately)
+models/*
+!models/.gitkeep
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code worktrees
+.claude/worktrees/

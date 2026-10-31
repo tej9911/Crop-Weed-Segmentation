@@ -1,339 +1,288 @@
-import io
-import os
+"""Flask API and web UI for MT-AHNet crop / weed classification.
+
+Run locally with ``python -m backend.app``; in production use
+``gunicorn backend.app:app``.
+"""
+
 import datetime
+import json
 import logging
+import os
+import threading
+import time
 
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
-from flask_cors import CORS
-from PIL import Image
+from werkzeug.exceptions import HTTPException
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+from . import __version__
+from .config import PROJECT_ROOT, Settings, load_dotenv
+from .constants import CLASS_INFO, CLASS_NAMES, DATASET_DIRS, NUM_CLASSES, SUPPORTED_EXTENSIONS
+from . import vision
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
 
-
-def env_int(name, default, minimum=1):
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise RuntimeError(f'{name} must be an integer.') from exc
-    if parsed < minimum:
-        raise RuntimeError(f'{name} must be at least {minimum}.')
-    return parsed
+logger = logging.getLogger('mt_ahnet')
+FRONTEND_DIR = PROJECT_ROOT / 'frontend'
 
 
-MAX_UPLOAD_BYTES = env_int('MAX_UPLOAD_BYTES', 10 * 1024 * 1024)
-ENVIRONMENT = os.environ.get('APP_ENV', 'development').lower()
-ALLOW_DEMO_MODE = os.environ.get('ALLOW_DEMO_MODE', 'true').lower() == 'true'
+class ModelService:
+    """Loads the Keras model once, on first use, and runs inference."""
 
-# --- Custom Layers & TensorFlow Fallback ---
-HAS_TF = False
-try:
-    import tensorflow as tf
-    import keras
-    from keras import layers
-    HAS_TF = True
-except ImportError:
-    print("WARNING: TensorFlow/Keras not found in the environment.")
-    print("Starting Flask server in Local Heuristic Simulation Mode.")
+    def __init__(self, path, loader=None):
+        self.path = path
+        self._loader = loader
+        self._model = None
+        self._error = None
+        self._attempted = False
+        self._lock = threading.Lock()
 
-if HAS_TF:
-    @keras.saving.register_keras_serializable()
-    class ReduceMeanLayer(layers.Layer):
-        def call(self, x):
-            import keras.ops as kops
-            return kops.mean(x, axis=-1, keepdims=True)
+    @property
+    def error(self):
+        return self._error
 
-    @keras.saving.register_keras_serializable()
-    class ReduceMaxLayer(layers.Layer):
-        def call(self, x):
-            import keras.ops as kops
-            return kops.max(x, axis=-1, keepdims=True)
-else:
-    class ReduceMeanLayer: pass
-    class ReduceMaxLayer: pass
+    def get(self):
+        if self._attempted:
+            return self._model
+        with self._lock:
+            if not self._attempted:
+                self._model, self._error = self._load()
+                self._attempted = True
+        return self._model
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRONTEND_DIR = os.path.join(PROJECT_ROOT, 'frontend')
-MODEL_DIR = os.path.join(PROJECT_ROOT, 'models')
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_BYTES
-CORS(app, origins=os.environ.get('CORS_ORIGINS', '*').split(','))
-
-
-@app.errorhandler(413)
-def request_too_large(_error):
-    return jsonify({'error': 'The uploaded request is too large.'}), 413
-
-
-@app.errorhandler(500)
-def internal_error(_error):
-    logger.exception('Unhandled application error')
-    return jsonify({'error': 'Internal server error.'}), 500
-
-IMG_SIZE = (128, 128)
-NUM_CLASSES = 4
-CLASS_NAMES = ['Broadleaf Weed', 'Grass Weed', 'Soil', 'Soybean']
-
-# Relaxed thresholds
-DEMO_MIN_FIELD_LIKENESS = 0.05
-LIVE_MIN_CONFIDENCE = 0.30
-
-CLASS_INFO = {
-    'Soil': {'color': '#8B6914', 'risk': 'none', 'action': 'Healthy bare soil detected.'},
-    'Soybean': {'color': '#4CAF50', 'risk': 'none', 'action': 'Healthy soybean crop.'},
-    'Grass Weed': {'color': '#FF9800', 'risk': 'medium', 'action': 'Grass weed detected.'},
-    'Broadleaf Weed': {'color': '#F44336', 'risk': 'high', 'action': 'Broadleaf weed detected.'},
-}
-
-_model = None
-_model_error = None
-
-
-def model_path():
-    configured_path = os.environ.get('MODEL_PATH')
-    if configured_path:
-        return configured_path if os.path.isabs(configured_path) else os.path.join(PROJECT_ROOT, configured_path)
-    for filename in ('mt_ahnet_model.keras', 'mt_ahnet_model.h5'):
-        candidate = os.path.join(MODEL_DIR, filename)
-        if os.path.exists(candidate):
-            return candidate
-    return None
-
-def get_model():
-    global _model_error
-    if not HAS_TF:
-        _model_error = 'TensorFlow/Keras is unavailable.'
-        return None
-    global _model
-    if _model is not None:
-        return _model
-    try:
-        path = model_path()
-        if path:
-            _model = tf.keras.models.load_model(
-                path,
-                compile=False,
-                custom_objects={'ReduceMeanLayer': ReduceMeanLayer, 'ReduceMaxLayer': ReduceMaxLayer}
-            )
-            if _model.input_shape[1:] != (*IMG_SIZE, 3):
-                raise ValueError(f'Expected model input shape (*, {IMG_SIZE[0]}, {IMG_SIZE[1]}, 3), got {_model.input_shape}.')
-            output_shape = _model.output_shape
-            if output_shape[-1] != NUM_CLASSES:
-                raise ValueError(f'Expected {NUM_CLASSES} model outputs, got {output_shape}.')
-            _model_error = None
-            logger.info('Model loaded from %s', path)
-        else:
-            _model_error = 'No model artifact was found.'
-            logger.warning(_model_error)
-    except Exception as exc:
-        _model_error = f'Model load failed: {exc}'
-        logger.exception(_model_error)
-    return _model
-
-
-def prediction_response(predicted_class, confidence, probabilities, demo_mode, low_confidence=False):
-    if predicted_class not in CLASS_NAMES:
-        raise ValueError('Model returned an unknown class.')
-    values = {name: float(probabilities.get(name, 0.0)) for name in CLASS_NAMES}
-    values = {name: max(0.0, value) for name, value in values.items()}
-    total = sum(values.values())
-    if not np.isfinite(total) or total <= 0:
-        raise ValueError('Model returned invalid probabilities.')
-    values = {name: value / total for name, value in values.items()}
-    normalized_confidence = values[predicted_class]
-    response = {
-        'predicted_class': predicted_class,
-        'confidence': normalized_confidence,
-        'probabilities': values,
-        'class_info': CLASS_INFO.get(predicted_class, {}),
-        'demo_mode': demo_mode,
-    }
-    if low_confidence:
-        response['low_confidence'] = True
-    return response
-
-@app.route('/')
-@app.route('/index.html')
-def home():
-    return send_from_directory(FRONTEND_DIR, 'index.html')
-
-@app.route('/api/stats')
-def stats():
-    return jsonify({
-        'model': {'accuracy': 0.961, 'precision': 0.958, 'recall': 0.947, 'f1_score': 0.952, 'val_loss': 0.118},
-        'dataset': {'classes': {'Soybean': {'count': 7376}, 'Soil': {'count': 3249}, 'Grass Weed': {'count': 3520}, 'Broadleaf Weed': {'count': 1191}}}
-    })
-
-@app.route('/api/health')
-def health():
-    m = get_model()
-    ready = m is not None or (ENVIRONMENT != 'production' and ALLOW_DEMO_MODE)
-    return jsonify({
-        'status': 'ready' if ready else 'degraded',
-        'environment': ENVIRONMENT,
-        'model_loaded': m is not None,
-        'demo_mode': m is None and ALLOW_DEMO_MODE,
-        'model_error': _model_error if m is None else None,
-        'classes': CLASS_NAMES,
-        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
-    })
-
-
-@app.route('/api/ready')
-def ready():
-    m = get_model()
-    if m is None:
-        return jsonify({'status': 'not_ready', 'reason': _model_error or 'Model unavailable.'}), 503
-    return jsonify({'status': 'ready', 'model_loaded': True})
-
-@app.route('/api/predict', methods=['POST'])
-def predict():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image file provided.'}), 400
-    f = request.files['image']
-    data = f.read()
-    if not data:
-        return jsonify({'error': 'The image file is empty.'}), 400
-    
-    # Pre-check likeness
-    score = 0.0
-    try:
-        img = Image.open(io.BytesIO(data))
-        img_hsv = img.convert('HSV')
-        hsv = np.array(img_hsv, dtype=np.uint8)
-        v = hsv[..., 2].astype(np.float32)
-        valid = v > 20
-        valid_count = max(1, int(valid.sum()))
-        h = hsv[..., 0].astype(np.float32)
-        s = hsv[..., 1].astype(np.float32)
-        green = ((h >= 35) & (h <= 110) & (s > 30) & (v > 30) & valid)
-        yellow = ((h >= 18) & (h <= 45) & (s > 30) & (v > 50) & valid)
-        brown = ((h >= 8) & (h <= 28) & (s > 20) & (v > 20) & valid)
-        score = float((green.sum() + yellow.sum() + brown.sum()) / valid_count)
-    except (OSError, ValueError, Image.UnidentifiedImageError):
-        return jsonify({'error': 'The uploaded file is not a valid image.'}), 415
-
-    logger.debug('Likeness score: %.4f', score)
-    
-    if score < DEMO_MIN_FIELD_LIKENESS:
-        return jsonify({'error': f'Rejected (Score: {score:.2f}). Try a clearer field image.'}), 422
-
-    model = get_model()
-    if model is None:
-        if ENVIRONMENT == 'production' or not ALLOW_DEMO_MODE:
-            return jsonify({'error': 'The inference model is unavailable.'}), 503
-        # Fallback to local python pixel-based heuristic classifier
+    def _load(self):
+        if self.path is None or not self.path.exists():
+            message = f'No model file found at {self.path}. Train one with "python -m backend.train".'
+            logger.warning(message)
+            return None, message
         try:
-            img = Image.open(io.BytesIO(data)).convert('RGB')
-            # Resize for efficiency
-            img_resized = img.resize((128, 128))
-            img_hsv = img_resized.convert('HSV')
-            hsv = np.array(img_hsv, dtype=np.uint8)
-            h = hsv[..., 0].astype(np.float32) * 1.41 # Convert [0,255] to [0,360] scale
-            s = hsv[..., 1].astype(np.float32) * 100.0 / 255.0
-            v = hsv[..., 2].astype(np.float32) * 100.0 / 255.0
+            loader = self._loader
+            if loader is None:
+                from .model import load_model as loader  # Imports TensorFlow.
+            model = loader(self.path)
+            logger.info('Model loaded from %s', self.path)
+            return model, None
+        except ImportError as exc:
+            logger.warning('TensorFlow is not installed: %s', exc)
+            return None, 'TensorFlow / Keras is not installed.'
+        except Exception as exc:  # noqa: BLE001 - any load failure must be reported, not raised.
+            logger.exception('Model load failed')
+            return None, f'Model load failed: {exc}'
 
-            total_pix = float(h.size)
-            # Count pixels
-            soy_pix = float(((h >= 58) & (h <= 95) & (s > 12) & (v > 12)).sum())
-            grass_pix = float(((h >= 32) & (h < 58) & (s > 12) & (v > 12)).sum())
-            broad_pix = float((((h > 95) & (h <= 150) | (h < 15)) & (s > 12) & (v > 12)).sum())
-            soil_pix = total_pix - (soy_pix + grass_pix + broad_pix)
+    def predict(self, model_input):
+        model = self.get()
+        output = model(np.expand_dims(model_input, axis=0), training=False)
+        return np.asarray(output, dtype=np.float64).reshape(-1)
 
-            p_soy = soy_pix / total_pix
-            p_grass = grass_pix / total_pix
-            p_broad = broad_pix / total_pix
-            p_soil = soil_pix / total_pix
 
-            veg_sum = p_soy + p_grass + p_broad
-            if veg_sum < 0.08:
-                pred_class = 'Soil'
-                confidence = min(0.99, max(0.5, 0.8 + (p_soil * 0.15)))
-                rem = 1.0 - confidence
-                other_sum = p_soy + p_grass + p_broad
-                if other_sum:
-                    probabilities = {
-                        'Soil': confidence,
-                        'Soybean': rem * (p_soy / other_sum),
-                        'Grass Weed': rem * (p_grass / other_sum),
-                        'Broadleaf Weed': rem * (p_broad / other_sum)
-                    }
-                else:
-                    probabilities = {
-                        'Soil': confidence,
-                        'Soybean': rem / 3,
-                        'Grass Weed': rem / 3,
-                        'Broadleaf Weed': rem / 3
-                    }
-            else:
-                if p_soy >= p_grass and p_soy >= p_broad:
-                    pred_class = 'Soybean'
-                    v_ratio = p_soy / veg_sum
-                elif p_grass >= p_soy and p_grass >= p_broad:
-                    pred_class = 'Grass Weed'
-                    v_ratio = p_grass / veg_sum
-                else:
-                    pred_class = 'Broadleaf Weed'
-                    v_ratio = p_broad / veg_sum
+def normalize(probabilities):
+    """Clip to non-negative values and rescale so they sum to 1."""
+    values = np.clip(np.asarray([probabilities[name] for name in CLASS_NAMES], dtype=np.float64), 0, None)
+    total = values.sum()
+    if not np.isfinite(total) or total <= 0:
+        raise ValueError('Invalid probabilities.')
+    return {name: float(v) for name, v in zip(CLASS_NAMES, values / total)}
 
-                confidence = min(0.99, max(0.4, 0.65 + v_ratio * 0.3))
-                rem = 1.0 - confidence
-                
-                # Exclude the predicted class pixels from the denominator for other classes
-                pred_pix = soy_pix if pred_class == 'Soybean' else (grass_pix if pred_class == 'Grass Weed' else broad_pix)
-                other_sum = total_pix - pred_pix
-                
-                probabilities = {}
-                probabilities[pred_class] = confidence
-                
-                for c in ['Soybean', 'Grass Weed', 'Broadleaf Weed', 'Soil']:
-                    if c == pred_class:
-                        continue
-                    if other_sum:
-                        if c == 'Soybean':
-                            p_val = p_soy
-                        elif c == 'Grass Weed':
-                            p_val = p_grass
-                        elif c == 'Broadleaf Weed':
-                            p_val = p_broad
-                        else:
-                            p_val = p_soil
-                        probabilities[c] = rem * (p_val / other_sum)
-                    else:
-                        probabilities[c] = rem / (len(CLASS_NAMES) - 1)
 
-            return jsonify(prediction_response(pred_class, confidence, probabilities, True))
-        except Exception as e:
-            return jsonify({'error': f'Fallback inference failed: {str(e)}'}), 500
-        
+def load_metadata(path):
+    if path is None or not path.exists():
+        return None
     try:
-        img_rgb = Image.open(io.BytesIO(data)).convert('RGB').resize(IMG_SIZE)
-        x = np.expand_dims(np.array(img_rgb, dtype=np.float32) / 255.0, axis=0)
-        preds = np.asarray(model.predict(x, verbose=0)[0], dtype=np.float32)
-        if preds.shape != (NUM_CLASSES,) or not np.all(np.isfinite(preds)):
-            return jsonify({'error': 'The model returned an invalid prediction.'}), 502
-        idx = int(np.argmax(preds))
-        probabilities = {CLASS_NAMES[i]: float(preds[i]) for i in range(NUM_CLASSES)}
-        response = prediction_response(CLASS_NAMES[idx], float(preds[idx]), probabilities, False)
-        if response['confidence'] < LIVE_MIN_CONFIDENCE:
-            logger.warning('Low confidence (%.2f) for %s.', response['confidence'], CLASS_NAMES[idx])
-            response['low_confidence'] = True
-        return jsonify(response)
-    except (OSError, ValueError) as exc:
-        logger.warning('Prediction input/model contract failure: %s', exc)
-        return jsonify({'error': 'The image could not be processed.'}), 422
-    except Exception:
-        logger.exception('Inference failed')
-        return jsonify({'error': 'Inference failed.'}), 502
+        return json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        logger.exception('Could not read model metadata from %s', path)
+        return None
+
+
+def count_dataset(data_dir):
+    if not data_dir.is_dir():
+        return None
+    counts = {}
+    for name, folder in zip(CLASS_NAMES, DATASET_DIRS):
+        class_dir = data_dir / folder
+        counts[name] = sum(
+            1 for entry in os.scandir(class_dir)
+            if entry.is_file() and os.path.splitext(entry.name)[1].lower() in SUPPORTED_EXTENSIONS
+        ) if class_dir.is_dir() else 0
+    return counts if any(counts.values()) else None
+
+
+def create_app(settings=None, model_loader=None):
+    settings = settings or Settings.from_env()
+    logging.basicConfig(level=os.environ.get('LOG_LEVEL', 'INFO').upper(),
+                        format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+
+    app = Flask(__name__, static_folder=None)
+    app.config['MAX_CONTENT_LENGTH'] = settings.max_upload_bytes
+    app.config['JSON_SORT_KEYS'] = False
+    app.extensions['settings'] = settings
+
+    if settings.cors_origins:
+        from flask_cors import CORS
+        CORS(app, resources={r'/api/*': {'origins': list(settings.cors_origins)}})
+
+    model_service = ModelService(settings.model_path, model_loader)
+    app.extensions['model_service'] = model_service
+    cache = {}
+
+    def metadata():
+        if 'metadata' not in cache:
+            cache['metadata'] = load_metadata(settings.metadata_path)
+        return cache['metadata']
+
+    def dataset_counts():
+        if 'dataset' not in cache:
+            meta = metadata() or {}
+            cache['dataset'] = (meta.get('dataset') or {}).get('class_counts') or count_dataset(settings.data_dir)
+        return cache['dataset']
+
+    def mode():
+        if model_service.get() is not None:
+            return 'model'
+        return 'demo' if settings.demo_mode_enabled else 'unavailable'
+
+    def error(message, status, **extra):
+        return jsonify({'error': message, **extra}), status
+
+    @app.errorhandler(HTTPException)
+    def http_error(exc):
+        if not request.path.startswith('/api/'):
+            return exc
+        messages = {413: f'The upload is larger than {settings.max_upload_bytes // (1024 * 1024)} MB.'}
+        return error(messages.get(exc.code, exc.description), exc.code)
+
+    @app.errorhandler(Exception)
+    def unhandled_error(exc):
+        logger.exception('Unhandled error')
+        return error('Internal server error.', 500)
+
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        if request.path.startswith('/api/'):
+            response.headers.setdefault('Cache-Control', 'no-store')
+        return response
+
+    @app.get('/')
+    @app.get('/index.html')
+    def index():
+        return send_from_directory(FRONTEND_DIR, 'index.html')
+
+    @app.get('/api/health')
+    def health():
+        current_mode = mode()
+        return jsonify({
+            'status': 'ok',
+            'version': __version__,
+            'environment': settings.environment,
+            'mode': current_mode,
+            'model_loaded': current_mode == 'model',
+            'demo_mode': current_mode == 'demo',
+            'model_error': model_service.error if current_mode != 'model' else None,
+            'classes': list(CLASS_NAMES),
+            'max_upload_bytes': settings.max_upload_bytes,
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
+        })
+
+    @app.get('/api/ready')
+    def ready():
+        current_mode = mode()
+        if current_mode == 'unavailable':
+            return jsonify({'status': 'not_ready', 'reason': model_service.error or 'Model unavailable.'}), 503
+        return jsonify({'status': 'ready', 'mode': current_mode})
+
+    @app.get('/api/stats')
+    def stats():
+        meta = metadata()
+        model_info = None
+        if meta and model_service.get() is not None:
+            metrics = meta.get('test_metrics') or {}
+            model_info = {
+                'version': meta.get('model_version'),
+                'created_at': meta.get('created_at'),
+                'parameters': meta.get('parameters'),
+                'model_size_bytes': meta.get('model_size_bytes'),
+                'evaluated_on': 'held-out test set',
+                'test_images': (meta.get('dataset') or {}).get('split_sizes', {}).get('test'),
+                **{key: metrics.get(key) for key in ('accuracy', 'precision', 'recall', 'f1_score', 'loss')},
+                'per_class': metrics.get('per_class'),
+                'confusion_matrix': metrics.get('confusion_matrix'),
+            }
+        counts = dataset_counts()
+        return jsonify({
+            'model': model_info,
+            'dataset': {'class_counts': counts, 'total': sum(counts.values()) if counts else None},
+        })
+
+    @app.post('/api/predict')
+    def predict():
+        upload = request.files.get('image')
+        if upload is None:
+            return error('No image file provided. Send it as multipart form field "image".', 400)
+        data = upload.read()
+        if not data:
+            return error('The image file is empty.', 400)
+
+        started = time.perf_counter()
+        try:
+            image = vision.decode_image(data)
+        except vision.InvalidImageError as exc:
+            status = 413 if 'too large' in str(exc) else 415
+            return error(str(exc), status)
+
+        preview = vision.thumbnail(image)
+        likeness = vision.field_likeness(preview)
+        if likeness < vision.MIN_FIELD_LIKENESS:
+            return error('This does not look like a field image. Upload a photo of crops, weeds or soil.',
+                         422, field_likeness=round(likeness, 3))
+
+        current_mode = mode()
+        if current_mode == 'unavailable':
+            return error('The prediction model is unavailable.', 503)
+
+        labels = vision.colour_label_map(preview)
+        pixel_coverage = vision.coverage(labels)
+
+        if current_mode == 'model':
+            try:
+                raw = model_service.predict(vision.to_model_input(image))
+                if raw.shape != (NUM_CLASSES,) or not np.all(np.isfinite(raw)):
+                    raise ValueError(f'Unexpected model output {raw.shape}.')
+                probabilities = normalize(dict(zip(CLASS_NAMES, raw)))
+            except Exception:  # noqa: BLE001 - report inference failures as 502.
+                logger.exception('Inference failed')
+                return error('The model failed to process this image.', 502)
+        else:
+            probabilities = normalize(vision.heuristic_probabilities(pixel_coverage))
+
+        predicted = max(probabilities, key=probabilities.get)
+        confidence = probabilities[predicted]
+        return jsonify({
+            'predicted_class': predicted,
+            'confidence': confidence,
+            'low_confidence': confidence < settings.low_confidence_threshold,
+            'probabilities': probabilities,
+            'class_info': CLASS_INFO[predicted],
+            'source': 'model' if current_mode == 'model' else 'colour_heuristic',
+            'demo_mode': current_mode == 'demo',
+            'colour_coverage': pixel_coverage,
+            'image': {'width': image.width, 'height': image.height},
+            'preview': vision.to_data_url(preview),
+            'vegetation_map': vision.to_data_url(vision.vegetation_overlay(preview, labels)),
+            'elapsed_ms': round((time.perf_counter() - started) * 1000, 1),
+        })
+
+    return app
+
+
+load_dotenv()
+app = create_app()
+
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    print(f"Starting MT-AHNet Server on port {port}...")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    port = int(os.environ.get('PORT', '5000'))
+    host = os.environ.get('HOST', '127.0.0.1')
+    logger.info('Starting MT-AHNet server on http://%s:%d', host, port)
+    app.run(host=host, port=port, debug=False)
